@@ -5,6 +5,47 @@
   if (window.__sab_hook_installed) return;
   window.__sab_hook_installed = true;
 
+  // ============================================================================
+  // PRACTICE 1: Centralized Selectors with Resilient Fallbacks
+  // ============================================================================
+  const SELECTORS = {
+    // Track row and links inside playlists/albums
+    trackRow: '[data-testid="tracklist-row"], [role="row"]',
+    trackLink: 'a[data-testid="internal-track-link"], a[href*="/track/"]',
+    trackTitleInRow: '[data-testid="tracklist-row"] div[dir="auto"], [data-testid="internal-track-link"]',
+    artistLink: 'a[href*="/artist/"]',
+
+    // Bottom playback bar controls
+    queueButton: '[data-testid="control-button-queue"], button[aria-label*="Queue" i]',
+    skipForward: '[data-testid="control-button-skip-forward"], button[aria-label*="Next" i]',
+    skipBack: '[data-testid="control-button-skip-back"], button[aria-label*="Previous" i]',
+    shuffleButton: '[data-testid="control-button-shuffle"], button[aria-label*="Shuffle" i]',
+    repeatButton: '[data-testid="control-button-repeat"], button[aria-label*="Repeat" i]',
+    playPauseButton: '[data-testid="control-button-playpause"], button[aria-label*="Play" i], button[aria-label*="Pause" i]',
+    progressBar: '[data-testid="playback-progressbar"], [data-testid="progress-bar"], [role="slider"][aria-label*="progress" i]',
+
+    // Play action buttons
+    playButton: '[data-testid="play-button"], button[aria-label*="Play" i]',
+    mainPlayButton: '[data-testid="action-bar-row"] [data-testid="play-button"], main [data-testid="play-button"], [data-testid="play-button"]',
+
+    // Context & Menus
+    moreButton: '[data-testid="more-button"], button[aria-haspopup="menu"]',
+    menuItem: '[role="menuitem"], button[role="menuitem"]',
+
+    // Now Playing Widget
+    nowPlayingWidget: '[data-testid="now-playing-widget"]',
+    nowPlayingTitle: '[data-testid="context-item-info-title"], [data-testid="now-playing-widget"] a[href*="/track/"]',
+    nowPlayingArtist: '[data-testid="context-item-info-subtitles"], [data-testid="context-item-info-artists"]',
+
+    // Ad banners & containers
+    adSlotContainer: '[data-testid="ad-slot-container"]',
+    leaderboardAd: '[data-testid="leaderboard-ad"]',
+    billboardAd: '[data-testid="billboard-ad"]',
+    displayAd: '[data-testid="DisplayAd"]',
+    adLink: 'a[href*="/ad/"], a[data-testid="context-item-info-ad-title"]',
+    adTitle: '[data-testid="context-item-info-ad-title"], [data-testid="ad-info-title"]'
+  };
+
   const trackedMedia = new Set();
   let isAdCurrentlyPlaying = false;
   let userVolumeBeforeAd = 1;
@@ -22,15 +63,76 @@
   let isInternalMutation = false;
   let observerDebounceTimer = null;
 
+  // ============================================================================
+  // PRACTICE 2: Fail-Open Wrapper Pattern
+  // Never let an extension hook block or crash the native browser/page function.
+  // ============================================================================
+  function safeWrap(originalFn, customLogic) {
+    return function (...args) {
+      try {
+        customLogic.apply(this, args);
+      } catch (err) {
+        console.debug('[SpotifyAdBlocker] Hook bypassed due to host update:', err);
+      }
+      return originalFn.apply(this, args);
+    };
+  }
+
   function safeMutate(fn) {
     isInternalMutation = true;
     try {
       fn();
+    } catch (err) {
+      console.debug('[SpotifyAdBlocker] Safe mutation caught error:', err);
     } finally {
       Promise.resolve().then(() => {
         isInternalMutation = false;
       });
     }
+  }
+
+  // ============================================================================
+  // PRACTICE 3: Circuit Breaker for Infinite Loops & High-Frequency DOM Changes
+  // ============================================================================
+  let observerExecutionCount = 0;
+  let observerLastReset = Date.now();
+  let observerInstance = null;
+  let circuitBreakerCooldownTimer = null;
+  const CIRCUIT_BREAKER_THRESHOLD = 40; // Max fires per second before tripping
+
+  function handleMutationCircuitBreaker() {
+    const now = Date.now();
+    if (now - observerLastReset > 1000) {
+      observerExecutionCount = 0;
+      observerLastReset = now;
+    }
+
+    observerExecutionCount++;
+    if (observerExecutionCount > CIRCUIT_BREAKER_THRESHOLD) {
+      console.warn(
+        '[SpotifyAdBlocker] High-frequency DOM changes detected (>40/sec). Pausing observer to prevent browser freeze.'
+      );
+      if (observerInstance) {
+        observerInstance.disconnect();
+      }
+      if (observerDebounceTimer) {
+        clearTimeout(observerDebounceTimer);
+        observerDebounceTimer = null;
+      }
+
+      // Cool down for 5 seconds, then safely re-arm the observer
+      clearTimeout(circuitBreakerCooldownTimer);
+      circuitBreakerCooldownTimer = setTimeout(() => {
+        observerExecutionCount = 0;
+        observerLastReset = Date.now();
+        console.info('[SpotifyAdBlocker] Cooldown complete. Re-arming MutationObserver.');
+        startObserver();
+      }, 5000);
+
+      return false; // Tripped circuit breaker
+    }
+
+    return true; // Healthy
   }
 
   let config = {
@@ -134,22 +236,25 @@
     return obj;
   }
 
+  // Hook JSON.parse with Fail-Open design
   const origJSONParse = JSON.parse;
   JSON.parse = function (text, reviver) {
     const parsed = origJSONParse.call(this, text, reviver);
-    if (
-      config.unlockControls &&
-      typeof text === 'string' &&
-      (text.includes('restrictions') || text.includes('disallow'))
-    ) {
-      try {
+    try {
+      if (
+        config.unlockControls &&
+        typeof text === 'string' &&
+        (text.includes('restrictions') || text.includes('disallow'))
+      ) {
         stripRestrictionsFromObject(parsed);
-      } catch (_) {}
+      }
+    } catch (err) {
+      console.debug('[SpotifyAdBlocker] JSON.parse hook bypassed:', err);
     }
     return parsed;
   };
 
-  // Intercept Response.prototype.json safely without breaking streams or hanging
+  // Hook Response.prototype.json with Fail-Open design
   const origResponseJson = Response.prototype.json;
   Response.prototype.json = async function (...args) {
     const data = await origResponseJson.apply(this, args);
@@ -157,7 +262,9 @@
       if (config.unlockControls && data && typeof data === 'object') {
         stripRestrictionsFromObject(data);
       }
-    } catch (_) {}
+    } catch (err) {
+      console.debug('[SpotifyAdBlocker] Response.json hook bypassed:', err);
+    }
     return data;
   };
 
@@ -199,6 +306,7 @@
     }
   }
 
+  // Hook document.createElement with Fail-Open design
   const origCreateElement = document.createElement;
   document.createElement = function (tagName, options) {
     const el = origCreateElement.call(this, tagName, options);
@@ -207,35 +315,42 @@
       if (tag === 'audio' || tag === 'video') {
         registerMediaElement(el);
       }
-    } catch (_) {}
+    } catch (err) {
+      console.debug('[SpotifyAdBlocker] createElement hook bypassed:', err);
+    }
     return el;
   };
 
+  // Hook window.Audio with Fail-Open design
   if (window.Audio) {
     const OrigAudio = window.Audio;
     window.Audio = function (...args) {
       const audio = new OrigAudio(...args);
       try {
         registerMediaElement(audio);
-      } catch (_) {}
+      } catch (err) {
+        console.debug('[SpotifyAdBlocker] Audio hook bypassed:', err);
+      }
       return audio;
     };
     window.Audio.prototype = OrigAudio.prototype;
   }
 
-  // Cross-browser safe HTMLMediaElement.prototype.play hook:
-  // Never perform synchronous blocking work or heavy DOM manipulation inside play().
-  // Return the native promise immediately so Edge PlayReady and Chrome Widevine DRM pipelines stay intact.
+  // Hook HTMLMediaElement.prototype.play with Fail-Open design
   const origPlay = HTMLMediaElement.prototype.play;
   HTMLMediaElement.prototype.play = function (...args) {
     try {
       registerMediaElement(this);
-    } catch (_) {}
+    } catch (err) {
+      console.debug('[SpotifyAdBlocker] Media registration bypassed:', err);
+    }
     const playPromise = origPlay.apply(this, args);
     setTimeout(() => {
       try {
         evaluateAdState();
-      } catch (_) {}
+      } catch (err) {
+        console.debug('[SpotifyAdBlocker] Ad evaluation bypassed:', err);
+      }
     }, 0);
     return playPromise;
   };
@@ -261,16 +376,16 @@
   function extractTrackFromRow(rowEl) {
     if (!rowEl) return null;
 
-    // Look for track anchor link inside the row
+    // Look for track anchor link inside the row using centralized selectors
     const trackLink =
-      rowEl.querySelector('a[data-testid="internal-track-link"]') ||
+      rowEl.querySelector(SELECTORS.trackLink) ||
       rowEl.querySelector('a[href*="/track/"]');
 
     const titleEl =
       trackLink ||
-      rowEl.querySelector('[data-testid="tracklist-row"] div[dir="auto"]');
+      rowEl.querySelector(SELECTORS.trackTitleInRow);
 
-    const artistEls = rowEl.querySelectorAll('a[href*="/artist/"]');
+    const artistEls = rowEl.querySelectorAll(SELECTORS.artistLink);
     const artists = Array.from(artistEls)
       .map((a) => (a.textContent || '').trim())
       .filter(Boolean)
@@ -295,11 +410,9 @@
 
   function recordCurrentTrackToHistory() {
     if (isAdCurrentlyPlaying) return;
-    const nowPlayingLink = document.querySelector(
-      '[data-testid="now-playing-widget"] a[data-testid="context-item-info-title"], [data-testid="now-playing-widget"] a[href*="/track/"]'
-    );
-    const titleEl = document.querySelector('[data-testid="context-item-info-title"]');
-    const artistEl = document.querySelector('[data-testid="context-item-info-subtitles"]');
+    const nowPlayingLink = document.querySelector(SELECTORS.nowPlayingTitle);
+    const titleEl = document.querySelector(SELECTORS.nowPlayingTitle);
+    const artistEl = document.querySelector(SELECTORS.nowPlayingArtist);
 
     const title = titleEl ? (titleEl.textContent || '').trim() : '';
     const artist = artistEl ? (artistEl.textContent || '').trim() : '';
@@ -341,9 +454,9 @@
     if (trackObj.href) {
       const visibleLink = document.querySelector(`a[href="${trackObj.href}"]`);
       if (visibleLink) {
-        const row = visibleLink.closest('[data-testid="tracklist-row"]');
+        const row = visibleLink.closest(SELECTORS.trackRow);
         if (row) {
-          const playBtn = row.querySelector('[data-testid="play-button"], button[aria-label*="Play"]');
+          const playBtn = row.querySelector(SELECTORS.playButton);
           if (playBtn) {
             playBtn.click();
             finishTransition();
@@ -354,11 +467,11 @@
     }
 
     // Case 2: Match by title in currently visible tracklist rows
-    const allRows = document.querySelectorAll('[data-testid="tracklist-row"]');
+    const allRows = document.querySelectorAll(SELECTORS.trackRow);
     for (const row of allRows) {
       const info = extractTrackFromRow(row);
       if (info && info.title.toLowerCase() === trackObj.title.toLowerCase()) {
-        const playBtn = row.querySelector('[data-testid="play-button"], button[aria-label*="Play"]');
+        const playBtn = row.querySelector(SELECTORS.playButton);
         if (playBtn) {
           playBtn.click();
           finishTransition();
@@ -375,9 +488,7 @@
       let attempts = 0;
       const pollForActionPlay = setInterval(() => {
         attempts++;
-        const mainPlayBtn = document.querySelector(
-          '[data-testid="action-bar-row"] [data-testid="play-button"], main [data-testid="play-button"]'
-        );
+        const mainPlayBtn = document.querySelector(SELECTORS.mainPlayButton);
         if (mainPlayBtn) {
           clearInterval(pollForActionPlay);
           mainPlayBtn.click();
@@ -417,7 +528,7 @@
   function enhanceTracklistRows() {
     if (!config.unlockControls || !config.customQueueEnabled) return;
 
-    document.querySelectorAll('[data-testid="tracklist-row"]').forEach((row) => {
+    document.querySelectorAll(SELECTORS.trackRow).forEach((row) => {
       if (row.dataset.sabQueueEnhanced === 'true') return;
       row.dataset.sabQueueEnhanced = 'true';
 
@@ -452,13 +563,13 @@
   // 4. NATIVE SPOTIFY UI BUTTONS & CUSTOM QUEUE DRAWER
   // ============================================================================
   const NATIVE_CONTROL_SELECTORS = [
-    '[data-testid="control-button-skip-forward"]',
-    '[data-testid="control-button-skip-back"]',
-    '[data-testid="control-button-shuffle"]',
-    '[data-testid="control-button-repeat"]',
-    '[data-testid="control-button-playpause"]',
-    '[data-testid="control-button-queue"]',
-    '[data-testid="playback-progressbar"]'
+    SELECTORS.skipForward,
+    SELECTORS.skipBack,
+    SELECTORS.shuffleButton,
+    SELECTORS.repeatButton,
+    SELECTORS.playPauseButton,
+    SELECTORS.queueButton,
+    SELECTORS.progressBar
   ];
 
   function unlockNativeButtons() {
@@ -477,7 +588,7 @@
   }
 
   function updateNativeQueueBadge() {
-    const queueBtn = document.querySelector('[data-testid="control-button-queue"]');
+    const queueBtn = document.querySelector(SELECTORS.queueButton);
     if (!queueBtn) return;
 
     let badge = queueBtn.querySelector('.sab-queue-count-badge');
@@ -649,7 +760,7 @@
     document.addEventListener(
       'contextmenu',
       (e) => {
-        const row = e.target instanceof Element ? e.target.closest('[data-testid="tracklist-row"]') : null;
+        const row = e.target instanceof Element ? e.target.closest(SELECTORS.trackRow) : null;
         if (row) {
           pendingContextTrack = extractTrackFromRow(row);
         }
@@ -665,13 +776,13 @@
         if (!(target instanceof Element)) return;
 
         // Track "..." more button on a track row
-        const rowForMore = target.closest('[data-testid="tracklist-row"]');
-        if (rowForMore && target.closest('[data-testid="more-button"], button[aria-haspopup="menu"]')) {
+        const rowForMore = target.closest(SELECTORS.trackRow);
+        if (rowForMore && target.closest(SELECTORS.moreButton)) {
           pendingContextTrack = extractTrackFromRow(rowForMore);
         }
 
         // 0. Native "Add to queue" context-menu item
-        const menuItem = target.closest('[role="menuitem"]');
+        const menuItem = target.closest(SELECTORS.menuItem);
         if (menuItem && config.customQueueEnabled) {
           const text = (menuItem.textContent || '').trim().toLowerCase();
           if (text.includes('add to queue') && pendingContextTrack) {
@@ -681,13 +792,13 @@
         }
 
         // 1. Native Queue Button in bottom player bar -> Toggles Custom Queue Manager alongside native queue
-        const queueBtn = target.closest('[data-testid="control-button-queue"]');
+        const queueBtn = target.closest(SELECTORS.queueButton);
         if (queueBtn && config.customQueueEnabled) {
           toggleCustomQueueDrawer();
         }
 
         // 2. Native Next / Skip Forward Button
-        const nextBtn = target.closest('[data-testid="control-button-skip-forward"]');
+        const nextBtn = target.closest(SELECTORS.skipForward);
         if (nextBtn) {
           if (isAdCurrentlyPlaying) {
             forceSkipForward();
@@ -722,7 +833,7 @@
         }
 
         // 3. Native Previous / Skip Back Button
-        const prevBtn = target.closest('[data-testid="control-button-skip-back"]');
+        const prevBtn = target.closest(SELECTORS.skipBack);
         if (prevBtn) {
           const mediaBefore = getActiveMediaElement();
           const timeBefore = mediaBefore ? mediaBefore.currentTime : 0;
@@ -745,9 +856,7 @@
       const target = e.target;
       if (!(target instanceof Element)) return;
 
-      const progressBar = target.closest(
-        '[data-testid="playback-progressbar"], [data-testid="progress-bar"]'
-      );
+      const progressBar = target.closest(SELECTORS.progressBar);
       if (!progressBar) return;
 
       const rect = progressBar.getBoundingClientRect();
@@ -789,21 +898,19 @@
       return { isAd: true, label: 'Advertisement' };
     }
 
-    const nowPlayingWidget = document.querySelector('[data-testid="now-playing-widget"]');
+    const nowPlayingWidget = document.querySelector(SELECTORS.nowPlayingWidget);
     if (nowPlayingWidget) {
       const ariaLabel = (nowPlayingWidget.getAttribute('aria-label') || '').toLowerCase();
       if (ariaLabel.includes('advertisement')) {
         return { isAd: true, label: 'Advertisement' };
       }
-      const adLink = nowPlayingWidget.querySelector(
-        'a[href*="/ad/"], a[data-testid="context-item-info-ad-title"]'
-      );
+      const adLink = nowPlayingWidget.querySelector(SELECTORS.adLink);
       if (adLink) {
         return { isAd: true, label: adLink.textContent || 'Advertisement' };
       }
     }
 
-    const trackTitleEl = document.querySelector('[data-testid="context-item-info-title"]');
+    const trackTitleEl = document.querySelector(SELECTORS.nowPlayingTitle);
     if (trackTitleEl) {
       const text = (trackTitleEl.textContent || '').trim().toLowerCase();
       if (text === 'advertisement' || text === 'sponsored') {
@@ -811,9 +918,7 @@
       }
     }
 
-    const adTitleEl = document.querySelector(
-      '[data-testid="context-item-info-ad-title"], [data-testid="ad-info-title"]'
-    );
+    const adTitleEl = document.querySelector(SELECTORS.adTitle);
     if (adTitleEl) {
       return { isAd: true, label: adTitleEl.textContent.trim() || 'Advertisement' };
     }
@@ -892,7 +997,7 @@
   }
 
   // ============================================================================
-  // 6. SAFE OBSERVER & DOM LIFECYCLE MANAGEMENT
+  // 6. SAFE OBSERVER & DOM LIFECYCLE MANAGEMENT WITH CIRCUIT BREAKER
   // ============================================================================
   function startObserver() {
     if (!document.body) {
@@ -906,12 +1011,17 @@
 
     attachNativeControlListeners();
 
-    // Debounced MutationObserver with isInternalMutation guard to prevent event loop freezes
+    // Debounced MutationObserver with isInternalMutation and Circuit Breaker
     const observer = new MutationObserver((mutations) => {
       if (isInternalMutation) return;
 
+      // Practice 3: Circuit breaker check to kill infinite loops immediately
+      if (!handleMutationCircuitBreaker()) {
+        return;
+      }
+
       // Filter out internal mutations produced by our own UI elements
-      let hasExternalChanges = false;
+      let hasRelevantChanges = false;
       for (const m of mutations) {
         const target = m.target;
         if (target instanceof Element) {
@@ -926,11 +1036,11 @@
             continue;
           }
         }
-        hasExternalChanges = true;
+        hasRelevantChanges = true;
         break;
       }
 
-      if (!hasExternalChanges) return;
+      if (!hasRelevantChanges) return;
 
       if (observerDebounceTimer) {
         clearTimeout(observerDebounceTimer);
@@ -940,6 +1050,8 @@
         evaluateAdState();
       }, 300);
     });
+
+    observerInstance = observer;
 
     observer.observe(document.body, {
       childList: true,
