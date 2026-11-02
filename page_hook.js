@@ -10,7 +10,7 @@
   // ============================================================================
   const SELECTORS = {
     // Track row and links inside playlists/albums
-    trackRow: '[data-testid="tracklist-row"], [role="row"]',
+    trackRow: '[data-testid="tracklist-row"]',
     trackLink: 'a[data-testid="internal-track-link"], a[href*="/track/"]',
     trackTitleInRow: '[data-testid="tracklist-row"] div[dir="auto"], [data-testid="internal-track-link"]',
     artistLink: 'a[href*="/artist/"]',
@@ -546,38 +546,18 @@
     showStatusToast(`Added to Queue: ${trackObj.title}`);
   }
 
-  // Inject subtle native "+ Queue" button into every Spotify track row
+  // Unlock disabled buttons in track rows without injecting extra UI pills
   function enhanceTracklistRows() {
-    if (!config.unlockControls || !config.customQueueEnabled) return;
+    if (!config.unlockControls) return;
 
-    document.querySelectorAll(SELECTORS.trackRow).forEach((row) => {
+    document.querySelectorAll('[data-testid="tracklist-row"]').forEach((row) => {
       if (row.dataset.sabQueueEnhanced === 'true') return;
       row.dataset.sabQueueEnhanced = 'true';
 
-      // Unlock any disabled play button inside the row
       row.querySelectorAll('button[disabled], [aria-disabled="true"]').forEach((btn) => {
         btn.removeAttribute('disabled');
         btn.setAttribute('aria-disabled', 'false');
       });
-
-      // Add a sleek inline "+Q" button on the right side of the track row
-      const quickQueueBtn = document.createElement('button');
-      quickQueueBtn.className = 'sab-row-queue-btn';
-      quickQueueBtn.type = 'button';
-      quickQueueBtn.title = 'Add to Custom Queue (Click) | Play Next (Shift+Click)';
-      quickQueueBtn.textContent = '+ Queue';
-
-      quickQueueBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        const trackInfo = extractTrackFromRow(row);
-        if (trackInfo) {
-          addTrackToCustomQueue(trackInfo, e.shiftKey);
-        }
-      });
-
-      const lastCell = row.lastElementChild || row;
-      lastCell.appendChild(quickQueueBtn);
     });
   }
 
@@ -668,7 +648,7 @@
 
     const itemsHtml =
       customQueue.length === 0
-        ? `<div class="sab-q-empty">Your custom queue is empty.<br/>Click <b>+ Queue</b> on any song row or use Spotify's right-click <b>Add to queue</b> menu.</div>`
+        ? `<div class="sab-q-empty">Your custom queue is empty.<br/>Use Spotify's right-click or <b>...</b> menu &rarr; <b>Add to queue</b>.</div>`
         : customQueue
             .map(
               (item, idx) => `
