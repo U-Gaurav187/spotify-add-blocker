@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     muteCheckbox.checked = !!data.muteAds;
     ffCheckbox.checked = !!data.fastForwardAds;
     bannersCheckbox.checked = !!data.hideBanners;
-    adsCountEl.textContent = data.adsBlockedCount || 0;
+    adsCountEl.textContent = Number(data.adsBlockedCount || 0).toLocaleString();
   });
 
   unlockCheckbox.addEventListener('change', () => {
@@ -86,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (extApi.storage && extApi.storage.onChanged) {
     extApi.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.adsBlockedCount) {
-        adsCountEl.textContent = changes.adsBlockedCount.newValue || 0;
+        adsCountEl.textContent = Number(changes.adsBlockedCount.newValue || 0).toLocaleString();
       }
     });
   }

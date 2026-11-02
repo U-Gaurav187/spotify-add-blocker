@@ -62,6 +62,17 @@
   // Internal mutation & debounce guards to prevent observer feedback loops
   let isInternalMutation = false;
   let observerDebounceTimer = null;
+  let controlListenersAttached = false;
+
+  // Safe HTML string escape helper
+  function escapeHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
 
   // ============================================================================
   // PRACTICE 2: Fail-Open Wrapper Pattern
@@ -160,21 +171,25 @@
     });
   }
 
-  // Cross-world handshake: listen for configuration updates
+  // Cross-world handshake: listen for configuration updates safely handling stringified JSON
   window.addEventListener('SpotifyAdBlocker:Config', (e) => {
-    if (e.detail) {
-      config = { ...config, ...e.detail };
-      if (document.documentElement) {
-        document.documentElement.classList.toggle('sab-hide-banners', !!config.hideBanners);
-        document.documentElement.classList.toggle('sab-unlock-controls', !!config.unlockControls);
+    if (!e.detail) return;
+    try {
+      const incoming = typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail;
+      if (incoming && typeof incoming === 'object') {
+        config = { ...config, ...incoming };
+        if (document.documentElement) {
+          document.documentElement.classList.toggle('sab-hide-banners', !!config.hideBanners);
+          document.documentElement.classList.toggle('sab-unlock-controls', !!config.unlockControls);
+        }
+        if (config.unlockControls) {
+          safeMutate(() => {
+            unlockNativeButtons();
+          });
+        }
+        renderCustomQueueDrawer();
       }
-      if (config.unlockControls) {
-        safeMutate(() => {
-          unlockNativeButtons();
-        });
-      }
-      renderCustomQueueDrawer();
-    }
+    } catch (_) {}
   });
 
   // Signal readiness to content script and request active config
@@ -277,11 +292,11 @@
 
       // Async evaluation prevents interfering with browser DRM / MediaKey negotiations
       el.addEventListener('play', () => {
-        setTimeout(evaluateAdState, 0);
+        setTimeout(() => evaluateAdState(true), 0);
       });
       el.addEventListener('loadedmetadata', () => {
         setTimeout(() => {
-          evaluateAdState();
+          evaluateAdState(true);
           recordCurrentTrackToHistory();
         }, 0);
       });
@@ -347,7 +362,7 @@
     const playPromise = origPlay.apply(this, args);
     setTimeout(() => {
       try {
-        evaluateAdState();
+        evaluateAdState(true);
       } catch (err) {
         console.debug('[SpotifyAdBlocker] Ad evaluation bypassed:', err);
       }
@@ -450,9 +465,9 @@
       }, 1000);
     };
 
-    // Case 1: The track row is currently visible on the page
+    // Case 1: The track row is currently visible on the page (safely escaped CSS query)
     if (trackObj.href) {
-      const visibleLink = document.querySelector(`a[href="${trackObj.href}"]`);
+      const visibleLink = document.querySelector(`a[href="${CSS.escape(trackObj.href)}"]`);
       if (visibleLink) {
         const row = visibleLink.closest(SELECTORS.trackRow);
         if (row) {
@@ -640,6 +655,10 @@
     const drawer = document.getElementById('sab-custom-queue-drawer');
     if (!drawer) return;
 
+    // Preserve scroll position across renders so moving items doesn't jump the view
+    const prevList = drawer.querySelector('.sab-q-list');
+    const prevScrollTop = prevList ? prevList.scrollTop : 0;
+
     const itemsHtml =
       customQueue.length === 0
         ? `<div class="sab-q-empty">Your custom queue is empty.<br/>Click <b>+ Queue</b> on any song row or use Spotify's right-click <b>Add to queue</b> menu.</div>`
@@ -650,8 +669,8 @@
             <div class="sab-q-info" data-action="play" data-idx="${idx}" title="Click to play immediately">
               <span class="sab-q-index">${idx + 1}.</span>
               <div class="sab-q-text">
-                <div class="sab-q-title">${item.title.replace(/</g, '&lt;')}</div>
-                <div class="sab-q-artist">${item.artist.replace(/</g, '&lt;')}</div>
+                <div class="sab-q-title">${escapeHtml(item.title)}</div>
+                <div class="sab-q-artist">${escapeHtml(item.artist)}</div>
               </div>
             </div>
             <div class="sab-q-actions">
@@ -676,6 +695,11 @@
       </div>
       <div class="sab-q-list">${itemsHtml}</div>
     `;
+
+    const newList = drawer.querySelector('.sab-q-list');
+    if (newList && prevScrollTop > 0) {
+      newList.scrollTop = prevScrollTop;
+    }
 
     const closeBtn = drawer.querySelector('#sab-q-close');
     if (closeBtn) closeBtn.onclick = () => toggleCustomQueueDrawer(false);
@@ -756,6 +780,17 @@
 
   // Bind 100% of controls directly to Spotify's native buttons & context menus
   function attachNativeControlListeners() {
+    // Prevent attaching duplicate listeners if the circuit breaker resets
+    if (controlListenersAttached) return;
+    controlListenersAttached = true;
+
+    // Close Custom Queue Drawer on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        toggleCustomQueueDrawer(false);
+      }
+    });
+
     // Track right-click or "..." menu clicks on song rows so we know which song is being queued via native menu
     document.addEventListener(
       'contextmenu',
@@ -774,6 +809,18 @@
         if (!config.unlockControls) return;
         const target = e.target;
         if (!(target instanceof Element)) return;
+
+        // Close Queue Drawer if clicking anywhere outside the drawer and queue buttons
+        const drawer = document.getElementById('sab-custom-queue-drawer');
+        if (
+          drawer &&
+          drawer.classList.contains('open') &&
+          !target.closest('#sab-custom-queue-drawer') &&
+          !target.closest(SELECTORS.queueButton) &&
+          !target.closest('.sab-row-queue-btn')
+        ) {
+          toggleCustomQueueDrawer(false);
+        }
 
         // Track "..." more button on a track row
         const rowForMore = target.closest(SELECTORS.trackRow);
@@ -961,10 +1008,13 @@
     }
   }
 
-  function evaluateAdState() {
-    safeMutate(() => {
-      unlockNativeButtons();
-    });
+  // evaluateAdState supports shouldScanDom to eliminate unnecessary full-DOM scans during heartbeat ticks
+  function evaluateAdState(shouldScanDom = true) {
+    if (shouldScanDom) {
+      safeMutate(() => {
+        unlockNativeButtons();
+      });
+    }
 
     const { isAd, label } = detectAd();
     const mediaList = getAllMediaElements();
@@ -983,7 +1033,7 @@
           lastLoggedAdId = adSignature;
           window.dispatchEvent(
             new CustomEvent('SpotifyAdBlocker:AdHandled', {
-              detail: { label: label || 'Advertisement', timestamp: Date.now() }
+              detail: JSON.stringify({ label: label || 'Advertisement', timestamp: Date.now() })
             })
           );
         }
@@ -1047,7 +1097,7 @@
       }
       observerDebounceTimer = setTimeout(() => {
         observerDebounceTimer = null;
-        evaluateAdState();
+        evaluateAdState(true);
       }, 300);
     });
 
@@ -1063,10 +1113,10 @@
 
   startObserver();
 
-  // Low-frequency heartbeat to ensure ad mitigations are maintained even during silent playback changes
+  // Low-frequency heartbeat: check media/ad mitigation state without rescanning full DOM
   setInterval(() => {
     if (isAdCurrentlyPlaying || (trackedMedia.size > 0 && Array.from(trackedMedia).some((m) => !m.paused))) {
-      evaluateAdState();
+      evaluateAdState(false);
     }
   }, 1000);
 })();

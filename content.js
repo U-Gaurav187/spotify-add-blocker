@@ -1,19 +1,6 @@
 (() => {
   'use strict';
 
-  // ============================================================================
-  // Practice 1: Centralized Selectors with Resilient Fallbacks
-  // ============================================================================
-  const SELECTORS = {
-    trackRow: '[data-testid="tracklist-row"], [role="row"]',
-    queueButton: '[data-testid="control-button-queue"], button[aria-label*="Queue" i]',
-    skipForward: '[data-testid="control-button-skip-forward"], button[aria-label*="Next" i]',
-    skipBack: '[data-testid="control-button-skip-back"], button[aria-label*="Previous" i]',
-    trackLink: 'a[data-testid="internal-track-link"], a[href*="/track/"]',
-    nowPlayingWidget: '[data-testid="now-playing-widget"]',
-    progressBar: '[data-testid="playback-progressbar"], [data-testid="progress-bar"]'
-  };
-
   const extApi = typeof browser !== 'undefined' ? browser : chrome;
 
   // 1. Inject page_hook.js into the MAIN execution world dynamically.
@@ -84,15 +71,16 @@
   function pushConfigToPage(settings) {
     cachedSettings = { ...cachedSettings, ...settings };
     applyStyles(cachedSettings);
+    // Serialize detail as a JSON string to cross execution world boundaries safely in Firefox and Chrome
     window.dispatchEvent(
       new CustomEvent('SpotifyAdBlocker:Config', {
-        detail: {
+        detail: JSON.stringify({
           muteAds: cachedSettings.muteAds,
           fastForwardAds: cachedSettings.fastForwardAds,
           hideBanners: cachedSettings.hideBanners,
           unlockControls: cachedSettings.unlockControls,
           customQueueEnabled: cachedSettings.customQueueEnabled
-        }
+        })
       })
     );
   }

@@ -110,7 +110,15 @@ body {
 }
 
 .toggle-row input {
-  display: none;
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-row input:focus-visible + .slider {
+  outline: 2px solid #1db954;
+  outline-offset: 2px;
 }
 
 .slider {

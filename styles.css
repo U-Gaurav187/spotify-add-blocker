@@ -29,6 +29,7 @@ html.sab-unlock-controls [data-testid="progress-bar"] {
 /* Subtle inline "+ Queue" button inside each Spotify track row */
 .sab-row-queue-btn {
   opacity: 0;
+  flex-shrink: 0;
   background: rgba(29, 185, 84, 0.16);
   color: #1ed760;
   border: 1px solid rgba(29, 185, 84, 0.45);
