@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Spotify Web Ad Silencer & Native Queue Controller",
+  "name": "Ad Silencer & Queue Controller for Spotify™",
   "version": "3.0.0",
-  "description": "Silences/skips ads and unlocks unlimited skips, seek-bar scrubbing, custom queue ordering, and on-demand song playback directly via Spotify's native buttons.",
+  "description": "Silences ads and unlocks unlimited skips, seek scrubbing, custom queue ordering, and on-demand playback on Spotify Web.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "spotify-controller@example.com",
+      "id": "spotify-queue-controller@ugaurav.github.io",
       "strict_min_version": "128.0"
     }
   },
