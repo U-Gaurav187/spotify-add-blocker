@@ -546,95 +546,186 @@
     showStatusToast(`Added to Queue: ${trackObj.title}`);
   }
 
-  // Unlock disabled buttons in track rows without injecting extra UI pills
+  const DRAG_HANDLE_SVG = `
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+      <path d="M2 5.5h12v1.5H2V5.5zm0 3.5h12v1.5H2V9z"></path>
+    </svg>
+  `;
+
+  // Unlock disabled buttons in track rows & attach (=) drag handles inside Spotify's "Next in queue" panel
   function enhanceTracklistRows() {
     if (!config.unlockControls) return;
 
     document.querySelectorAll('[data-testid="tracklist-row"]').forEach((row) => {
-      if (row.dataset.sabQueueEnhanced === 'true') return;
-      row.dataset.sabQueueEnhanced = 'true';
+      if (row.dataset.sabQueueEnhanced !== 'true') {
+        row.dataset.sabQueueEnhanced = 'true';
+        row.querySelectorAll('button[disabled], [aria-disabled="true"]').forEach((btn) => {
+          btn.removeAttribute('disabled');
+          btn.setAttribute('aria-disabled', 'false');
+        });
+      }
+    });
 
-      row.querySelectorAll('button[disabled], [aria-disabled="true"]').forEach((btn) => {
-        btn.removeAttribute('disabled');
-        btn.setAttribute('aria-disabled', 'false');
+    if (config.customQueueEnabled) {
+      enhanceNativeQueuePanel();
+    }
+  }
+
+  // Adds the two-horizontal-lines (=) click-and-drag handle directly to Spotify's "Next in queue" sidebar
+  function enhanceNativeQueuePanel() {
+    const headings = Array.from(document.querySelectorAll('h1, h2, h3, div, span')).filter(
+      (el) => el.childElementCount === 0 && (el.textContent || '').trim().toLowerCase() === 'next in queue'
+    );
+    if (headings.length === 0) return;
+
+    const queuePanel =
+      headings[0].closest('aside') ||
+      headings[0].closest('[id*="Panel" i]') ||
+      headings[0].parentElement?.parentElement?.parentElement;
+    if (!queuePanel) return;
+
+    const rows = Array.from(queuePanel.querySelectorAll('[data-testid="tracklist-row"]'));
+    // Skip the first row if it sits under "Now playing" above "Next in queue"
+    const nextInQueueHeadingTop = headings[0].getBoundingClientRect().top;
+    const queueRows = rows.filter((r) => r.getBoundingClientRect().top > nextInQueueHeadingTop);
+
+    queueRows.forEach((row) => {
+      if (row.querySelector('.sab-native-queue-drag')) return;
+
+      const handle = document.createElement('span');
+      handle.className = 'sab-drag-handle sab-native-queue-drag';
+      handle.title = 'Click and drag to reorder queue';
+      handle.innerHTML = DRAG_HANDLE_SVG;
+
+      const firstCell = row.firstElementChild || row;
+      firstCell.insertBefore(handle, firstCell.firstChild);
+
+      handle.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const rowWrapper = row.closest('[role="row"]') || row;
+        const container = rowWrapper.parentElement;
+        if (!container) return;
+
+        row.classList.add('sab-dragging');
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'grabbing';
+
+        const onMouseMove = (moveEvent) => {
+          const allWrappers = Array.from(container.children).filter((el) => {
+            const innerRow = el.matches('[data-testid="tracklist-row"]')
+              ? el
+              : el.querySelector('[data-testid="tracklist-row"]');
+            return innerRow && innerRow.getBoundingClientRect().top > nextInQueueHeadingTop;
+          });
+
+          const targetSibling = allWrappers.find((sib) => {
+            if (sib === rowWrapper) return false;
+            const r = sib.getBoundingClientRect();
+            return moveEvent.clientY >= r.top && moveEvent.clientY <= r.bottom;
+          });
+
+          if (targetSibling) {
+            const r = targetSibling.getBoundingClientRect();
+            const midY = r.top + r.height / 2;
+            if (moveEvent.clientY < midY) {
+              container.insertBefore(rowWrapper, targetSibling);
+            } else {
+              container.insertBefore(rowWrapper, targetSibling.nextSibling);
+            }
+          }
+        };
+
+        const onMouseUp = () => {
+          document.removeEventListener('mousemove', onMouseMove, true);
+          document.removeEventListener('mouseup', onMouseUp, true);
+          document.body.style.userSelect = '';
+          document.body.style.cursor = '';
+          row.classList.remove('sab-dragging');
+
+          // Sync the new visual order of "Next in queue" into customQueue
+          const updatedRows = Array.from(queuePanel.querySelectorAll('[data-testid="tracklist-row"]')).filter(
+            (r) => r.getBoundingClientRect().top > nextInQueueHeadingTop
+          );
+          const syncedTracks = updatedRows.map(extractTrackFromRow).filter(Boolean);
+          if (syncedTracks.length > 0) {
+            customQueue = syncedTracks;
+            saveCustomQueue();
+          }
+        };
+
+        document.addEventListener('mousemove', onMouseMove, true);
+        document.addEventListener('mouseup', onMouseUp, true);
       });
     });
   }
 
-  // ============================================================================
-  // 4. NATIVE SPOTIFY UI BUTTONS & CUSTOM QUEUE DRAWER
-  // ============================================================================
-  const NATIVE_CONTROL_SELECTORS = [
-    SELECTORS.skipForward,
-    SELECTORS.skipBack,
-    SELECTORS.shuffleButton,
-    SELECTORS.repeatButton,
-    SELECTORS.playPauseButton,
-    SELECTORS.queueButton,
-    SELECTORS.progressBar
-  ];
+  // Click-and-drag reordering for the Custom Queue Drawer using the (=) handle
+  function enableDrawerDragAndDrop(listEl) {
+    if (!listEl) return;
+    let draggedItem = null;
 
-  function unlockNativeButtons() {
-    if (!config.unlockControls) return;
+    listEl.querySelectorAll('.sab-drag-handle').forEach((handle) => {
+      handle.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        const item = handle.closest('.sab-q-item');
+        if (!item) return;
 
-    for (const selector of NATIVE_CONTROL_SELECTORS) {
-      document.querySelectorAll(selector).forEach((el) => {
-        if (el.hasAttribute('disabled')) el.removeAttribute('disabled');
-        if (el.getAttribute('aria-disabled') === 'true') el.setAttribute('aria-disabled', 'false');
-        el.style.pointerEvents = 'auto';
-        el.style.opacity = '1';
+        e.preventDefault();
+        e.stopPropagation();
+
+        draggedItem = item;
+        draggedItem.classList.add('sab-dragging');
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'grabbing';
+
+        const onMouseMove = (moveEvent) => {
+          if (!draggedItem) return;
+          const siblings = Array.from(listEl.querySelectorAll('.sab-q-item'));
+          const targetSibling = siblings.find((sib) => {
+            if (sib === draggedItem) return false;
+            const r = sib.getBoundingClientRect();
+            return moveEvent.clientY >= r.top && moveEvent.clientY <= r.bottom;
+          });
+
+          if (targetSibling) {
+            const r = targetSibling.getBoundingClientRect();
+            const midY = r.top + r.height / 2;
+            if (moveEvent.clientY < midY) {
+              listEl.insertBefore(draggedItem, targetSibling);
+            } else {
+              listEl.insertBefore(draggedItem, targetSibling.nextSibling);
+            }
+          }
+        };
+
+        const onMouseUp = () => {
+          document.removeEventListener('mousemove', onMouseMove, true);
+          document.removeEventListener('mouseup', onMouseUp, true);
+          document.body.style.userSelect = '';
+          document.body.style.cursor = '';
+
+          if (!draggedItem) return;
+          draggedItem.classList.remove('sab-dragging');
+
+          const newOrderIndices = Array.from(listEl.querySelectorAll('.sab-q-item'))
+            .map((el) => parseInt(el.getAttribute('data-idx'), 10))
+            .filter((i) => !Number.isNaN(i) && i >= 0 && i < customQueue.length);
+
+          if (newOrderIndices.length === customQueue.length) {
+            customQueue = newOrderIndices.map((i) => customQueue[i]);
+          }
+
+          draggedItem = null;
+          saveCustomQueue();
+        };
+
+        document.addEventListener('mousemove', onMouseMove, true);
+        document.addEventListener('mouseup', onMouseUp, true);
       });
-    }
-    enhanceTracklistRows();
-    updateNativeQueueBadge();
-  }
-
-  function updateNativeQueueBadge() {
-    const queueBtn = document.querySelector(SELECTORS.queueButton);
-    if (!queueBtn) return;
-
-    let badge = queueBtn.querySelector('.sab-queue-count-badge');
-    if (customQueue.length > 0) {
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'sab-queue-count-badge';
-        queueBtn.style.position = 'relative';
-        queueBtn.appendChild(badge);
-      }
-      badge.textContent = String(customQueue.length);
-    } else if (badge) {
-      badge.remove();
-    }
-  }
-
-  function showStatusToast(message) {
-    if (!document.body) return;
-    let toast = document.getElementById('sab-status-toast');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.id = 'sab-status-toast';
-      document.body.appendChild(toast);
-    }
-    toast.textContent = message;
-    toast.classList.add('visible');
-    clearTimeout(toast._hideTimer);
-    toast._hideTimer = setTimeout(() => {
-      toast.classList.remove('visible');
-    }, 2200);
-  }
-
-  function toggleCustomQueueDrawer(forceState) {
-    if (!document.body) return;
-    let drawer = document.getElementById('sab-custom-queue-drawer');
-    if (!drawer) {
-      drawer = document.createElement('div');
-      drawer.id = 'sab-custom-queue-drawer';
-      document.body.appendChild(drawer);
-    }
-    const isOpen =
-      typeof forceState === 'boolean' ? forceState : !drawer.classList.contains('open');
-    drawer.classList.toggle('open', isOpen);
-    renderCustomQueueDrawer();
+    });
   }
 
   function renderCustomQueueDrawer() {
@@ -642,7 +733,6 @@
     const drawer = document.getElementById('sab-custom-queue-drawer');
     if (!drawer) return;
 
-    // Preserve scroll position across renders so moving items doesn't jump the view
     const prevList = drawer.querySelector('.sab-q-list');
     const prevScrollTop = prevList ? prevList.scrollTop : 0;
 
@@ -653,6 +743,7 @@
             .map(
               (item, idx) => `
           <div class="sab-q-item" data-idx="${idx}">
+            <span class="sab-drag-handle" title="Click and drag to reorder">${DRAG_HANDLE_SVG}</span>
             <div class="sab-q-info" data-action="play" data-idx="${idx}" title="Click to play immediately">
               <span class="sab-q-index">${idx + 1}.</span>
               <div class="sab-q-text">
@@ -661,8 +752,6 @@
               </div>
             </div>
             <div class="sab-q-actions">
-              <button type="button" data-action="up" data-idx="${idx}" title="Move Up">&uarr;</button>
-              <button type="button" data-action="down" data-idx="${idx}" title="Move Down">&darr;</button>
               <button type="button" data-action="remove" data-idx="${idx}" title="Remove">&times;</button>
             </div>
           </div>`
@@ -673,7 +762,7 @@
       <div class="sab-q-header">
         <div>
           <div class="sab-q-heading">Custom Play Queue (${customQueue.length})</div>
-          <div class="sab-q-sub">Plays automatically via Spotify's Next button</div>
+          <div class="sab-q-sub">Drag (=) to reorder &bull; Plays via Next button</div>
         </div>
         <div class="sab-q-header-btns">
           ${customQueue.length > 0 ? '<button type="button" id="sab-q-clear">Clear</button>' : ''}
@@ -684,8 +773,9 @@
     `;
 
     const newList = drawer.querySelector('.sab-q-list');
-    if (newList && prevScrollTop > 0) {
-      newList.scrollTop = prevScrollTop;
+    if (newList) {
+      if (prevScrollTop > 0) newList.scrollTop = prevScrollTop;
+      enableDrawerDragAndDrop(newList);
     }
 
     const closeBtn = drawer.querySelector('#sab-q-close');
@@ -710,16 +800,6 @@
           const [selected] = customQueue.splice(idx, 1);
           saveCustomQueue();
           playTrackOnDemand(selected);
-        } else if (action === 'up' && idx > 0) {
-          const temp = customQueue[idx - 1];
-          customQueue[idx - 1] = customQueue[idx];
-          customQueue[idx] = temp;
-          saveCustomQueue();
-        } else if (action === 'down' && idx < customQueue.length - 1) {
-          const temp = customQueue[idx + 1];
-          customQueue[idx + 1] = customQueue[idx];
-          customQueue[idx] = temp;
-          saveCustomQueue();
         } else if (action === 'remove') {
           customQueue.splice(idx, 1);
           saveCustomQueue();
