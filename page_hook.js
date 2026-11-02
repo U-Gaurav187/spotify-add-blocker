@@ -1,0 +1,852 @@
+(() => {
+  'use strict';
+
+  const trackedMedia = new Set();
+  let isAdCurrentlyPlaying = false;
+  let userVolumeBeforeAd = 1;
+  let userMutedBeforeAd = false;
+  let lastLoggedAdId = null;
+
+  // Custom Queue & Track History state
+  let customQueue = [];
+  let playHistory = [];
+  let isTransitioningQueueTrack = false;
+  let lastcapturedTrackInfo = null;
+  let pendingContextTrack = null;
+
+  let config = {
+    muteAds: true,
+    fastForwardAds: true,
+    hideBanners: true,
+    unlockControls: true,
+    customQueueEnabled: true
+  };
+
+  try {
+    const savedQueue = localStorage.getItem('sab_custom_queue_v3');
+    if (savedQueue) {
+      customQueue = JSON.parse(savedQueue) || [];
+    }
+  } catch (_) {}
+
+  function saveCustomQueue() {
+    try {
+      localStorage.setItem('sab_custom_queue_v3', JSON.stringify(customQueue));
+    } catch (_) {}
+    renderCustomQueueDrawer();
+    updateNativeQueueBadge();
+  }
+
+  window.addEventListener('SpotifyAdBlocker:Config', (e) => {
+    if (e.detail) {
+      config = { ...config, ...e.detail };
+      document.documentElement.classList.toggle('sab-hide-banners', !!config.hideBanners);
+      document.documentElement.classList.toggle('sab-unlock-controls', !!config.unlockControls);
+      if (config.unlockControls) {
+        unlockNativeButtons();
+      }
+      renderCustomQueueDrawer();
+    }
+  });
+
+  // ============================================================================
+  // 1. STRIP PLAYBACK & QUEUE RESTRICTIONS FROM SPOTIFY STATE PAYLOADS
+  // ============================================================================
+  const RESTRICTION_KEYS = [
+    'disallow_seeking_reasons',
+    'disallow_skipping_next_reasons',
+    'disallow_skipping_prev_reasons',
+    'disallow_peeking_next_reasons',
+    'disallow_peeking_prev_reasons',
+    'disallow_resuming_reasons',
+    'disallow_pausing_reasons',
+    'disallow_toggling_repeat_context_reasons',
+    'disallow_toggling_repeat_track_reasons',
+    'disallow_toggling_shuffle_reasons',
+    'disallow_transferring_playback_reasons',
+    'disallow_updating_context_reasons',
+    'disallow_inserting_into_next_tracks_reasons',
+    'disallow_inserting_into_context_tracks_reasons',
+    'disallow_reordering_in_next_tracks_reasons',
+    'disallow_reordering_in_context_tracks_reasons',
+    'disallow_removing_from_next_tracks_reasons',
+    'disallow_removing_from_context_tracks_reasons'
+  ];
+
+  function stripRestrictionsFromObject(obj, depth = 0) {
+    if (!config.unlockControls || !obj || typeof obj !== 'object' || depth > 6) {
+      return obj;
+    }
+
+    if (obj.restrictions && typeof obj.restrictions === 'object') {
+      for (const key of RESTRICTION_KEYS) {
+        if (key in obj.restrictions) {
+          delete obj.restrictions[key];
+        }
+      }
+    }
+
+    if (obj.disallows && typeof obj.disallows === 'object') {
+      for (const k of Object.keys(obj.disallows)) {
+        obj.disallows[k] = false;
+      }
+    }
+
+    for (const k of Object.keys(obj)) {
+      const val = obj[k];
+      if (val && typeof val === 'object') {
+        stripRestrictionsFromObject(val, depth + 1);
+      }
+    }
+    return obj;
+  }
+
+  const origJSONParse = JSON.parse;
+  JSON.parse = function (text, reviver) {
+    const parsed = origJSONParse.call(this, text, reviver);
+    if (
+      config.unlockControls &&
+      typeof text === 'string' &&
+      (text.includes('restrictions') || text.includes('disallow'))
+    ) {
+      try {
+        stripRestrictionsFromObject(parsed);
+      } catch (_) {}
+    }
+    return parsed;
+  };
+
+  const origResponseJson = Response.prototype.json;
+  Response.prototype.json = async function (...args) {
+    const data = await origResponseJson.apply(this, args);
+    if (config.unlockControls && data && typeof data === 'object') {
+      try {
+        stripRestrictionsFromObject(data);
+      } catch (_) {}
+    }
+    return data;
+  };
+
+  // ============================================================================
+  // 2. CAPTURE IN-MEMORY HTMLMediaElements & AUTO-ADVANCE CUSTOM QUEUE
+  // ============================================================================
+  function registerMediaElement(el) {
+    if (el instanceof HTMLMediaElement && !trackedMedia.has(el)) {
+      trackedMedia.add(el);
+      el.addEventListener('play', evaluateAdState);
+      el.addEventListener('loadedmetadata', () => {
+        evaluateAdState();
+        recordCurrentTrackToHistory();
+      });
+      el.addEventListener('timeupdate', () => {
+        if (isAdCurrentlyPlaying) {
+          applyAdMitigation(el);
+          return;
+        }
+        // Check if current track is about to finish (within 0.45s of end) and custom queue has items
+        if (
+          config.unlockControls &&
+          config.customQueueEnabled &&
+          customQueue.length > 0 &&
+          !isTransitioningQueueTrack &&
+          Number.isFinite(el.duration) &&
+          el.duration > 5 &&
+          el.currentTime >= el.duration - 0.45
+        ) {
+          playNextFromCustomQueue();
+        }
+      });
+    }
+  }
+
+  const origCreateElement = document.createElement;
+  document.createElement = function (tagName, options) {
+    const el = origCreateElement.call(this, tagName, options);
+    const tag = String(tagName).toLowerCase();
+    if (tag === 'audio' || tag === 'video') {
+      registerMediaElement(el);
+    }
+    return el;
+  };
+
+  const OrigAudio = window.Audio;
+  window.Audio = function (...args) {
+    const audio = new OrigAudio(...args);
+    registerMediaElement(audio);
+    return audio;
+  };
+  window.Audio.prototype = OrigAudio.prototype;
+
+  const origPlay = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function (...args) {
+    registerMediaElement(this);
+    evaluateAdState();
+    return origPlay.apply(this, args);
+  };
+
+  function getAllMediaElements() {
+    document.querySelectorAll('audio, video').forEach(registerMediaElement);
+    return Array.from(trackedMedia);
+  }
+
+  function getActiveMediaElement() {
+    const list = getAllMediaElements();
+    return (
+      list.find((m) => !m.paused && Number.isFinite(m.duration) && m.duration > 0) ||
+      list.find((m) => Number.isFinite(m.duration) && m.duration > 0) ||
+      list[0] ||
+      null
+    );
+  }
+
+  // ============================================================================
+  // 3. CUSTOM QUEUE & ON-DEMAND SONG PLAYBACK ENGINE
+  // ============================================================================
+  function extractTrackFromRow(rowEl) {
+    if (!rowEl) return null;
+
+    // Look for track anchor link inside the row
+    const trackLink =
+      rowEl.querySelector('a[data-testid="internal-track-link"]') ||
+      rowEl.querySelector('a[href*="/track/"]');
+
+    const titleEl =
+      trackLink ||
+      rowEl.querySelector('[data-testid="tracklist-row"] div[dir="auto"]');
+
+    const artistEls = rowEl.querySelectorAll('a[href*="/artist/"]');
+    const artists = Array.from(artistEls)
+      .map((a) => (a.textContent || '').trim())
+      .filter(Boolean)
+      .join(', ');
+
+    let href = trackLink ? trackLink.getAttribute('href') : null;
+    let trackId = null;
+    if (href && href.includes('/track/')) {
+      trackId = href.split('/track/')[1].split('?')[0];
+    }
+
+    const title = titleEl ? (titleEl.textContent || '').trim() : 'Selected Track';
+    if (!title && !href) return null;
+
+    return {
+      id: trackId || `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title: title || 'Unknown Song',
+      artist: artists || 'Spotify Artist',
+      href: href || null
+    };
+  }
+
+  function recordCurrentTrackToHistory() {
+    if (isAdCurrentlyPlaying) return;
+    const nowPlayingLink = document.querySelector(
+      '[data-testid="now-playing-widget"] a[data-testid="context-item-info-title"], [data-testid="now-playing-widget"] a[href*="/track/"]'
+    );
+    const titleEl = document.querySelector('[data-testid="context-item-info-title"]');
+    const artistEl = document.querySelector('[data-testid="context-item-info-subtitles"]');
+
+    const title = titleEl ? (titleEl.textContent || '').trim() : '';
+    const artist = artistEl ? (artistEl.textContent || '').trim() : '';
+    const href = nowPlayingLink ? nowPlayingLink.getAttribute('href') : null;
+
+    if (!title || title.toLowerCase() === 'advertisement') return;
+
+    const currentInfo = {
+      id: href || title,
+      title,
+      artist,
+      href
+    };
+
+    if (
+      !lastcapturedTrackInfo ||
+      lastcapturedTrackInfo.title !== currentInfo.title
+    ) {
+      if (lastcapturedTrackInfo) {
+        playHistory.push(lastcapturedTrackInfo);
+        if (playHistory.length > 30) playHistory.shift();
+      }
+      lastcapturedTrackInfo = currentInfo;
+    }
+  }
+
+  // Play any track object on demand using DOM match or SPA navigation + native play trigger
+  function playTrackOnDemand(trackObj) {
+    if (!trackObj) return;
+    isTransitioningQueueTrack = true;
+
+    const finishTransition = () => {
+      setTimeout(() => {
+        isTransitioningQueueTrack = false;
+      }, 1000);
+    };
+
+    // Case 1: The track row is currently visible on the page
+    if (trackObj.href) {
+      const visibleLink = document.querySelector(`a[href="${trackObj.href}"]`);
+      if (visibleLink) {
+        const row = visibleLink.closest('[data-testid="tracklist-row"]');
+        if (row) {
+          const playBtn = row.querySelector('[data-testid="play-button"], button[aria-label*="Play"]');
+          if (playBtn) {
+            playBtn.click();
+            finishTransition();
+            return;
+          }
+        }
+      }
+    }
+
+    // Case 2: Match by title in currently visible tracklist rows
+    const allRows = document.querySelectorAll('[data-testid="tracklist-row"]');
+    for (const row of allRows) {
+      const info = extractTrackFromRow(row);
+      if (info && info.title.toLowerCase() === trackObj.title.toLowerCase()) {
+        const playBtn = row.querySelector('[data-testid="play-button"], button[aria-label*="Play"]');
+        if (playBtn) {
+          playBtn.click();
+          finishTransition();
+          return;
+        }
+      }
+    }
+
+    // Case 3: Navigate via Spotify's SPA router (history.pushState) to the track page and click its primary Play button
+    if (trackObj.href) {
+      window.history.pushState({}, '', trackObj.href);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+
+      let attempts = 0;
+      const pollForActionPlay = setInterval(() => {
+        attempts++;
+        const mainPlayBtn = document.querySelector(
+          '[data-testid="action-bar-row"] [data-testid="play-button"], main [data-testid="play-button"]'
+        );
+        if (mainPlayBtn) {
+          clearInterval(pollForActionPlay);
+          mainPlayBtn.click();
+          finishTransition();
+        } else if (attempts >= 15) {
+          clearInterval(pollForActionPlay);
+          finishTransition();
+        }
+      }, 150);
+      return;
+    }
+
+    finishTransition();
+  }
+
+  function playNextFromCustomQueue() {
+    if (customQueue.length === 0) return false;
+    const nextTrack = customQueue.shift();
+    saveCustomQueue();
+    showStatusToast(`Playing from Queue: ${nextTrack.title}`);
+    playTrackOnDemand(nextTrack);
+    return true;
+  }
+
+  function addTrackToCustomQueue(trackObj, playNext = false) {
+    if (!trackObj) return;
+    if (playNext) {
+      customQueue.unshift(trackObj);
+    } else {
+      customQueue.push(trackObj);
+    }
+    saveCustomQueue();
+    showStatusToast(`Added to Queue: ${trackObj.title}`);
+  }
+
+  // Inject subtle native "+ Queue" button into every Spotify track row
+  function enhanceTracklistRows() {
+    if (!config.unlockControls || !config.customQueueEnabled) return;
+
+    document.querySelectorAll('[data-testid="tracklist-row"]').forEach((row) => {
+      if (row.dataset.sabQueueEnhanced === 'true') return;
+      row.dataset.sabQueueEnhanced = 'true';
+
+      // Unlock any disabled play button inside the row
+      row.querySelectorAll('button[disabled], [aria-disabled="true"]').forEach((btn) => {
+        btn.removeAttribute('disabled');
+        btn.setAttribute('aria-disabled', 'false');
+      });
+
+      // Add a sleek inline "+Q" button on the right side of the track row
+      const quickQueueBtn = document.createElement('button');
+      quickQueueBtn.className = 'sab-row-queue-btn';
+      quickQueueBtn.type = 'button';
+      quickQueueBtn.title = 'Add to Custom Queue (Click) | Play Next (Shift+Click)';
+      quickQueueBtn.textContent = '+ Queue';
+
+      quickQueueBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const trackInfo = extractTrackFromRow(row);
+        if (trackInfo) {
+          addTrackToCustomQueue(trackInfo, e.shiftKey);
+        }
+      });
+
+      const lastCell = row.lastElementChild || row;
+      lastCell.appendChild(quickQueueBtn);
+    });
+  }
+
+  // ============================================================================
+  // 4. NATIVE SPOTIFY UI BUTTONS & CUSTOM QUEUE DRAWER
+  // ============================================================================
+  const NATIVE_CONTROL_SELECTORS = [
+    '[data-testid="control-button-skip-forward"]',
+    '[data-testid="control-button-skip-back"]',
+    '[data-testid="control-button-shuffle"]',
+    '[data-testid="control-button-repeat"]',
+    '[data-testid="control-button-playpause"]',
+    '[data-testid="control-button-queue"]',
+    '[data-testid="playback-progressbar"]'
+  ];
+
+  function unlockNativeButtons() {
+    if (!config.unlockControls) return;
+
+    for (const selector of NATIVE_CONTROL_SELECTORS) {
+      document.querySelectorAll(selector).forEach((el) => {
+        if (el.hasAttribute('disabled')) el.removeAttribute('disabled');
+        if (el.getAttribute('aria-disabled') === 'true') el.setAttribute('aria-disabled', 'false');
+        el.style.pointerEvents = 'auto';
+        el.style.opacity = '1';
+      });
+    }
+    enhanceTracklistRows();
+    updateNativeQueueBadge();
+  }
+
+  function updateNativeQueueBadge() {
+    const queueBtn = document.querySelector('[data-testid="control-button-queue"]');
+    if (!queueBtn) return;
+
+    let badge = queueBtn.querySelector('.sab-queue-count-badge');
+    if (customQueue.length > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'sab-queue-count-badge';
+        queueBtn.style.position = 'relative';
+        queueBtn.appendChild(badge);
+      }
+      badge.textContent = String(customQueue.length);
+    } else if (badge) {
+      badge.remove();
+    }
+  }
+
+  function showStatusToast(message) {
+    let toast = document.getElementById('sab-status-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'sab-status-toast';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.classList.add('visible');
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => {
+      toast.classList.remove('visible');
+    }, 2200);
+  }
+
+  function toggleCustomQueueDrawer(forceState) {
+    let drawer = document.getElementById('sab-custom-queue-drawer');
+    if (!drawer) {
+      drawer = document.createElement('div');
+      drawer.id = 'sab-custom-queue-drawer';
+      document.body.appendChild(drawer);
+    }
+    const isOpen =
+      typeof forceState === 'boolean' ? forceState : !drawer.classList.contains('open');
+    drawer.classList.toggle('open', isOpen);
+    renderCustomQueueDrawer();
+  }
+
+  function renderCustomQueueDrawer() {
+    const drawer = document.getElementById('sab-custom-queue-drawer');
+    if (!drawer) return;
+
+    const itemsHtml =
+      customQueue.length === 0
+        ? `<div class="sab-q-empty">Your custom queue is empty.<br/>Click <b>+ Queue</b> on any song row or use Spotify's right-click <b>Add to queue</b> menu.</div>`
+        : customQueue
+            .map(
+              (item, idx) => `
+          <div class="sab-q-item" data-idx="${idx}">
+            <div class="sab-q-info" data-action="play" data-idx="${idx}" title="Click to play immediately">
+              <span class="sab-q-index">${idx + 1}.</span>
+              <div class="sab-q-text">
+                <div class="sab-q-title">${item.title.replace(/</g, '&lt;')}</div>
+                <div class="sab-q-artist">${item.artist.replace(/</g, '&lt;')}</div>
+              </div>
+            </div>
+            <div class="sab-q-actions">
+              <button type="button" data-action="up" data-idx="${idx}" title="Move Up">&uarr;</button>
+              <button type="button" data-action="down" data-idx="${idx}" title="Move Down">&darr;</button>
+              <button type="button" data-action="remove" data-idx="${idx}" title="Remove">&times;</button>
+            </div>
+          </div>`
+            )
+            .join('');
+
+    drawer.innerHTML = `
+      <div class="sab-q-header">
+        <div>
+          <div class="sab-q-heading">Custom Play Queue (${customQueue.length})</div>
+          <div class="sab-q-sub">Plays automatically via Spotify's Next button</div>
+        </div>
+        <div class="sab-q-header-btns">
+          ${customQueue.length > 0 ? '<button type="button" id="sab-q-clear">Clear</button>' : ''}
+          <button type="button" id="sab-q-close">&times;</button>
+        </div>
+      </div>
+      <div class="sab-q-list">${itemsHtml}</div>
+    `;
+
+    const closeBtn = drawer.querySelector('#sab-q-close');
+    if (closeBtn) closeBtn.onclick = () => toggleCustomQueueDrawer(false);
+
+    const clearBtn = drawer.querySelector('#sab-q-clear');
+    if (clearBtn) {
+      clearBtn.onclick = () => {
+        customQueue = [];
+        saveCustomQueue();
+      };
+    }
+
+    drawer.querySelectorAll('[data-action]').forEach((el) => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        const action = el.getAttribute('data-action');
+        const idx = parseInt(el.getAttribute('data-idx'), 10);
+        if (Number.isNaN(idx) || idx < 0 || idx >= customQueue.length) return;
+
+        if (action === 'play') {
+          const [selected] = customQueue.splice(idx, 1);
+          saveCustomQueue();
+          playTrackOnDemand(selected);
+        } else if (action === 'up' && idx > 0) {
+          const temp = customQueue[idx - 1];
+          customQueue[idx - 1] = customQueue[idx];
+          customQueue[idx] = temp;
+          saveCustomQueue();
+        } else if (action === 'down' && idx < customQueue.length - 1) {
+          const temp = customQueue[idx + 1];
+          customQueue[idx + 1] = customQueue[idx];
+          customQueue[idx] = temp;
+          saveCustomQueue();
+        } else if (action === 'remove') {
+          customQueue.splice(idx, 1);
+          saveCustomQueue();
+        }
+      };
+    });
+  }
+
+  function forceSkipForward() {
+    const media = getActiveMediaElement();
+    if (!media) return;
+    try {
+      if (Number.isFinite(media.duration) && media.duration > 0.5) {
+        media.currentTime = Math.max(0, media.duration - 0.15);
+        if (media.paused) {
+          media.play().catch(() => {});
+        }
+      }
+    } catch (_) {}
+  }
+
+  function forceSkipBack() {
+    const media = getActiveMediaElement();
+    if (!media) return;
+    try {
+      if (media.currentTime > 3) {
+        media.currentTime = 0;
+      } else if (playHistory.length > 0) {
+        const prevTrack = playHistory.pop();
+        playTrackOnDemand(prevTrack);
+      } else {
+        media.currentTime = 0;
+      }
+    } catch (_) {}
+  }
+
+  function forceSeekToPercentage(pct) {
+    const media = getActiveMediaElement();
+    if (!media || !Number.isFinite(media.duration) || media.duration <= 0) return;
+    const clamped = Math.max(0, Math.min(1, pct));
+    try {
+      media.currentTime = clamped * media.duration;
+    } catch (_) {}
+  }
+
+  // Bind 100% of controls directly to Spotify's native buttons & context menus
+  function attachNativeControlListeners() {
+    // Track right-click or "..." menu clicks on song rows so we know which song is being queued via native menu
+    document.addEventListener(
+      'contextmenu',
+      (e) => {
+        const row = e.target instanceof Element ? e.target.closest('[data-testid="tracklist-row"]') : null;
+        if (row) {
+          pendingContextTrack = extractTrackFromRow(row);
+        }
+      },
+      true
+    );
+
+    document.addEventListener(
+      'click',
+      (e) => {
+        if (!config.unlockControls) return;
+        const target = e.target;
+        if (!(target instanceof Element)) return;
+
+        // Track "..." more button on a track row
+        const rowForMore = target.closest('[data-testid="tracklist-row"]');
+        if (rowForMore && target.closest('[data-testid="more-button"], button[aria-haspopup="menu"]')) {
+          pendingContextTrack = extractTrackFromRow(rowForMore);
+        }
+
+        // 0. Native "Add to queue" context-menu item
+        const menuItem = target.closest('[role="menuitem"]');
+        if (menuItem && config.customQueueEnabled) {
+          const text = (menuItem.textContent || '').trim().toLowerCase();
+          if (text.includes('add to queue') && pendingContextTrack) {
+            addTrackToCustomQueue(pendingContextTrack, false);
+            pendingContextTrack = null;
+          }
+        }
+
+        // 1. Native Queue Button in bottom player bar -> Toggles Custom Queue Manager alongside native queue
+        const queueBtn = target.closest('[data-testid="control-button-queue"]');
+        if (queueBtn && config.customQueueEnabled) {
+          toggleCustomQueueDrawer();
+        }
+
+        // 2. Native Next / Skip Forward Button
+        const nextBtn = target.closest('[data-testid="control-button-skip-forward"]');
+        if (nextBtn) {
+          if (isAdCurrentlyPlaying) {
+            forceSkipForward();
+            return;
+          }
+
+          // If user has items in their custom queue, play the next queued song immediately!
+          if (config.customQueueEnabled && customQueue.length > 0) {
+            e.stopPropagation();
+            e.preventDefault();
+            playNextFromCustomQueue();
+            return;
+          }
+
+          const mediaBefore = getActiveMediaElement();
+          const srcBefore = mediaBefore ? mediaBefore.currentSrc : null;
+          const timeBefore = mediaBefore ? mediaBefore.currentTime : 0;
+
+          // Fallback if Spotify's native skip button was ignored due to skip limit
+          setTimeout(() => {
+            const mediaAfter = getActiveMediaElement();
+            if (
+              mediaAfter &&
+              mediaAfter.currentSrc === srcBefore &&
+              Math.abs(mediaAfter.currentTime - timeBefore) < 0.6 &&
+              timeBefore > 1.0
+            ) {
+              forceSkipForward();
+            }
+          }, 160);
+          return;
+        }
+
+        // 3. Native Previous / Skip Back Button
+        const prevBtn = target.closest('[data-testid="control-button-skip-back"]');
+        if (prevBtn) {
+          const mediaBefore = getActiveMediaElement();
+          const timeBefore = mediaBefore ? mediaBefore.currentTime : 0;
+
+          setTimeout(() => {
+            const mediaAfter = getActiveMediaElement();
+            if (mediaAfter && Math.abs(mediaAfter.currentTime - timeBefore) < 0.6) {
+              forceSkipBack();
+            }
+          }, 160);
+          return;
+        }
+      },
+      true
+    );
+
+    // 4. Native Progress Bar Seeking (Click & Drag directly on Spotify's seek bar)
+    const handleProgressBarSeek = (e) => {
+      if (!config.unlockControls) return;
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+
+      const progressBar = target.closest(
+        '[data-testid="playback-progressbar"], [data-testid="progress-bar"]'
+      );
+      if (!progressBar) return;
+
+      const rect = progressBar.getBoundingClientRect();
+      if (rect.width <= 0) return;
+
+      const pct = (e.clientX - rect.left) / rect.width;
+      const mediaBefore = getActiveMediaElement();
+      if (!mediaBefore || !Number.isFinite(mediaBefore.duration)) return;
+
+      const expectedTime = Math.max(0, Math.min(1, pct)) * mediaBefore.duration;
+
+      setTimeout(() => {
+        const mediaAfter = getActiveMediaElement();
+        if (mediaAfter && Math.abs(mediaAfter.currentTime - expectedTime) > 2.0) {
+          forceSeekToPercentage(pct);
+        }
+      }, 70);
+    };
+
+    document.addEventListener('mousedown', handleProgressBarSeek, true);
+    document.addEventListener('click', handleProgressBarSeek, true);
+  }
+
+  // ============================================================================
+  // 5. AD DETECTION & MITIGATION
+  // ============================================================================
+  function detectAd() {
+    if ('mediaSession' in navigator && navigator.mediaSession.metadata) {
+      const meta = navigator.mediaSession.metadata;
+      const title = (meta.title || '').trim().toLowerCase();
+      const artist = (meta.artist || '').trim().toLowerCase();
+      if (title === 'advertisement' || title === 'spotify' || artist === 'advertisement') {
+        return { isAd: true, label: meta.title || 'Advertisement' };
+      }
+    }
+
+    const docTitle = (document.title || '').toLowerCase();
+    if (docTitle.startsWith('advertisement')) {
+      return { isAd: true, label: 'Advertisement' };
+    }
+
+    const nowPlayingWidget = document.querySelector('[data-testid="now-playing-widget"]');
+    if (nowPlayingWidget) {
+      const ariaLabel = (nowPlayingWidget.getAttribute('aria-label') || '').toLowerCase();
+      if (ariaLabel.includes('advertisement')) {
+        return { isAd: true, label: 'Advertisement' };
+      }
+      const adLink = nowPlayingWidget.querySelector(
+        'a[href*="/ad/"], a[data-testid="context-item-info-ad-title"]'
+      );
+      if (adLink) {
+        return { isAd: true, label: adLink.textContent || 'Advertisement' };
+      }
+    }
+
+    const trackTitleEl = document.querySelector('[data-testid="context-item-info-title"]');
+    if (trackTitleEl) {
+      const text = (trackTitleEl.textContent || '').trim().toLowerCase();
+      if (text === 'advertisement' || text === 'sponsored') {
+        return { isAd: true, label: trackTitleEl.textContent.trim() };
+      }
+    }
+
+    const adTitleEl = document.querySelector(
+      '[data-testid="context-item-info-ad-title"], [data-testid="ad-info-title"]'
+    );
+    if (adTitleEl) {
+      return { isAd: true, label: adTitleEl.textContent.trim() || 'Advertisement' };
+    }
+
+    return { isAd: false, label: null };
+  }
+
+  function applyAdMitigation(mediaEl) {
+    if (!mediaEl) return;
+
+    if (config.muteAds) {
+      mediaEl.muted = true;
+    }
+
+    if (config.fastForwardAds) {
+      try {
+        if (mediaEl.playbackRate < 8) {
+          mediaEl.playbackRate = 8.0;
+        }
+        if (
+          Number.isFinite(mediaEl.duration) &&
+          mediaEl.duration > 1 &&
+          mediaEl.duration <= 120 &&
+          mediaEl.currentTime < mediaEl.duration - 0.35
+        ) {
+          mediaEl.currentTime = Math.max(0, mediaEl.duration - 0.25);
+        }
+      } catch (_) {}
+    }
+  }
+
+  function restoreNormalPlayback(mediaEl) {
+    if (!mediaEl) return;
+    if (config.muteAds) {
+      mediaEl.muted = userMutedBeforeAd;
+      mediaEl.volume = userVolumeBeforeAd;
+    }
+    if (mediaEl.playbackRate > 2) {
+      mediaEl.playbackRate = 1.0;
+    }
+  }
+
+  function evaluateAdState() {
+    unlockNativeButtons();
+
+    const { isAd, label } = detectAd();
+    const mediaList = getAllMediaElements();
+
+    if (isAd) {
+      if (!isAdCurrentlyPlaying) {
+        isAdCurrentlyPlaying = true;
+        const activeMedia = mediaList.find((m) => !m.paused) || mediaList[0];
+        if (activeMedia) {
+          userMutedBeforeAd = activeMedia.muted;
+          userVolumeBeforeAd = activeMedia.volume;
+        }
+
+        const adSignature = `${label}-${Math.floor(Date.now() / 5000)}`;
+        if (adSignature !== lastLoggedAdId) {
+          lastLoggedAdId = adSignature;
+          window.dispatchEvent(
+            new CustomEvent('SpotifyAdBlocker:AdHandled', {
+              detail: { label: label || 'Advertisement', timestamp: Date.now() }
+            })
+          );
+        }
+      }
+
+      mediaList.forEach(applyAdMitigation);
+    } else if (isAdCurrentlyPlaying) {
+      isAdCurrentlyPlaying = false;
+      mediaList.forEach(restoreNormalPlayback);
+    }
+  }
+
+  function startObserver() {
+    if (!document.body) {
+      requestAnimationFrame(startObserver);
+      return;
+    }
+    attachNativeControlListeners();
+    const observer = new MutationObserver(() => {
+      evaluateAdState();
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['aria-label', 'href', 'disabled', 'aria-disabled']
+    });
+  }
+
+  startObserver();
+  setInterval(evaluateAdState, 500);
+})();

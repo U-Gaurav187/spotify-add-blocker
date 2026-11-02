@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spotify Ultimate Controller</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo-row">
+        <span class="dot"></span>
+        <h1>Spotify Ultimate Control</h1>
+      </div>
+      <span class="badge">v3.0</span>
+    </header>
+
+    <div class="stats-card">
+      <div class="stats-number" id="adsCount">0</div>
+      <div class="stats-label">Ads Silenced &amp; Skipped</div>
+    </div>
+
+    <div class="controls">
+      <label class="toggle-row">
+        <div class="toggle-info">
+          <span class="toggle-title">Native Transport Unlocker</span>
+          <span class="toggle-desc">Unlimited Next, Prev &amp; Seek bar</span>
+        </div>
+        <input type="checkbox" id="unlockControls" checked />
+        <span class="slider"></span>
+      </label>
+
+      <label class="toggle-row">
+        <div class="toggle-info">
+          <span class="toggle-title">Custom Queue &amp; On-Demand</span>
+          <span class="toggle-desc">Add, reorder &amp; play any song next</span>
+        </div>
+        <input type="checkbox" id="customQueueEnabled" checked />
+        <span class="slider"></span>
+      </label>
+
+      <label class="toggle-row">
+        <div class="toggle-info">
+          <span class="toggle-title">Auto-Mute Audio Ads</span>
+          <span class="toggle-desc">Instantly mutes playback during ads</span>
+        </div>
+        <input type="checkbox" id="muteAds" checked />
+        <span class="slider"></span>
+      </label>
+
+      <label class="toggle-row">
+        <div class="toggle-info">
+          <span class="toggle-title">Fast-Forward Ads</span>
+          <span class="toggle-desc">Accelerates &amp; skips ad streams</span>
+        </div>
+        <input type="checkbox" id="fastForwardAds" checked />
+        <span class="slider"></span>
+      </label>
+
+      <label class="toggle-row">
+        <div class="toggle-info">
+          <span class="toggle-title">Hide Banner Ads</span>
+          <span class="toggle-desc">Removes visual ad containers</span>
+        </div>
+        <input type="checkbox" id="hideBanners" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <footer class="footer">
+      <button id="resetBtn" class="reset-btn">Reset Counter</button>
+      <a href="https://open.spotify.com" target="_blank" class="open-link">Open Web Player &rarr;</a>
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

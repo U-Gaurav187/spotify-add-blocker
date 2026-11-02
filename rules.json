@@ -1,0 +1,119 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||adeventtracker.spotify.com^",
+      "initiatorDomains": [
+        "open.spotify.com"
+      ],
+      "resourceTypes": [
+        "xmlhttprequest",
+        "ping",
+        "script",
+        "image",
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||ads-fa.spotify.com^",
+      "initiatorDomains": [
+        "open.spotify.com"
+      ],
+      "resourceTypes": [
+        "xmlhttprequest",
+        "ping",
+        "script",
+        "image",
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||doubleclick.net^",
+      "initiatorDomains": [
+        "open.spotify.com"
+      ],
+      "resourceTypes": [
+        "xmlhttprequest",
+        "ping",
+        "script",
+        "image",
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||googlesyndication.com^",
+      "initiatorDomains": [
+        "open.spotify.com"
+      ],
+      "resourceTypes": [
+        "xmlhttprequest",
+        "ping",
+        "script",
+        "image",
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||googleadservices.com^",
+      "initiatorDomains": [
+        "open.spotify.com"
+      ],
+      "resourceTypes": [
+        "xmlhttprequest",
+        "ping",
+        "script",
+        "image",
+        "sub_frame"
+      ]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||crashdump.spotify.com^",
+      "initiatorDomains": [
+        "open.spotify.com"
+      ],
+      "resourceTypes": [
+        "xmlhttprequest",
+        "ping"
+      ]
+    }
+  }
+]
