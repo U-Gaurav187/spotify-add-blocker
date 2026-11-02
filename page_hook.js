@@ -372,6 +372,13 @@
 
   function getAllMediaElements() {
     document.querySelectorAll('audio, video').forEach(registerMediaElement);
+    if (trackedMedia.size > 10) {
+      for (const el of trackedMedia) {
+        if (el.paused && !el.currentSrc && !document.contains(el)) {
+          trackedMedia.delete(el);
+        }
+      }
+    }
     return Array.from(trackedMedia);
   }
 

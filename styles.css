@@ -92,8 +92,20 @@ html.sab-unlock-controls [data-testid="progress-bar"] {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+@keyframes sabDrawerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 #sab-custom-queue-drawer.open {
   display: flex;
+  animation: sabDrawerFadeIn 0.16s ease-out;
 }
 
 .sab-q-header {
@@ -144,6 +156,17 @@ html.sab-unlock-controls [data-testid="progress-bar"] {
   flex-direction: column;
   gap: 6px;
   max-height: 350px;
+  scrollbar-width: thin;
+  scrollbar-color: #3e3e3e transparent;
+}
+
+.sab-q-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sab-q-list::-webkit-scrollbar-thumb {
+  background: #3e3e3e;
+  border-radius: 3px;
 }
 
 .sab-q-empty {
