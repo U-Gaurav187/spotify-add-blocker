@@ -327,7 +327,7 @@
   }
 
   // ============================================================================
-  // 3. CUSTOM QUEUE & NATIVE "NEXT IN QUEUE" DRAG-AND-DROP (=) ENGINE
+  // 3. CUSTOM QUEUE & NATIVE "NEXT IN QUEUE" ANIMATED DRAG-AND-DROP (=) ENGINE
   // ============================================================================
   function extractTrackFromRow(rowEl) {
     if (!rowEl) return null;
@@ -353,7 +353,6 @@
         .join(', ');
     }
 
-    // Fallback for compact rows inside Spotify's right-side "Next in queue" panel
     if (!title) {
       const textLeafs = Array.from(rowEl.querySelectorAll('p, span, div, a'))
         .filter((el) => el.childElementCount === 0 && !el.closest('.sab-drag-handle'))
@@ -402,7 +401,6 @@
     }
   }
 
-  // Locate the "Next in queue" heading and return the sidebar panel + song row objects
   function getNativeQueueRowsInfo() {
     const candidates = document.querySelectorAll('h1, h2, h3, h4, span, div, p');
     let nextHeading = null;
@@ -442,7 +440,6 @@
 
     if (!queuePanel) return null;
 
-    // Find every song row below "Next in queue" by locating its album cover <img>
     const imgs = Array.from(queuePanel.querySelectorAll('img')).filter((img) => {
       const r = img.getBoundingClientRect();
       return r.top > headingRect.bottom - 4 && r.width >= 24 && r.width <= 80;
@@ -468,7 +465,6 @@
       if (!innerRow || seenInnerRows.has(innerRow)) continue;
       seenInnerRows.add(innerRow);
 
-      // Walk up if the row is wrapped in a single-item wrapper (like <li role="listitem"> or <div role="row">)
       let movableRow = innerRow;
       while (
         movableRow.parentElement &&
@@ -485,7 +481,7 @@
     return { nextHeading, headingRect, queuePanel, rowEntries };
   }
 
-  // Injects the two-horizontal-lines (=) drag handle onto each song in Spotify's "Next in queue" panel
+  // Smooth FLIP + Live Cursor Tracking Drag-and-Drop in Spotify's "Next in queue"
   function enhanceNativeQueuePanel() {
     if (!config.customQueueEnabled) return;
     const info = getNativeQueueRowsInfo();
@@ -501,6 +497,7 @@
         innerRow.style.position = 'relative';
       }
       innerRow.style.paddingLeft = '28px';
+      movableRow.classList.add('sab-queue-row-animated');
 
       const handle = document.createElement('span');
       handle.className = 'sab-drag-handle sab-native-queue-drag';
@@ -517,7 +514,16 @@
         const container = movableRow.parentElement;
         if (!container) return;
 
+        const initialRect = movableRow.getBoundingClientRect();
+        const grabOffsetWithinRow = e.clientY - initialRect.top;
+        let currentTranslateY = 0;
+
+        innerRow.classList.remove('sab-drop-settled');
         innerRow.classList.add('sab-dragging');
+        movableRow.style.transition = 'none';
+        movableRow.style.zIndex = '999';
+        movableRow.style.transform = 'translate3d(0, 0px, 0) scale(1.02)';
+
         document.body.style.userSelect = 'none';
         document.body.style.cursor = 'grabbing';
 
@@ -529,23 +535,77 @@
             .map((entry) => entry.movableRow)
             .filter((el) => el.parentElement === container);
 
+          // 1. Check if cursor crossed over a non-animating sibling row
           const targetSibling = siblings.find((sib) => {
-            if (sib === movableRow) return false;
+            if (sib === movableRow || sib.dataset.sabFlipping === 'true') return false;
             const r = sib.getBoundingClientRect();
             return moveEvent.clientY >= r.top && moveEvent.clientY <= r.bottom;
           });
 
           if (targetSibling) {
-            const r = targetSibling.getBoundingClientRect();
-            const midY = r.top + r.height / 2;
-            safeMutate(() => {
-              if (moveEvent.clientY < midY) {
-                container.insertBefore(movableRow, targetSibling);
-              } else {
-                container.insertBefore(movableRow, targetSibling.nextSibling);
-              }
-            });
+            const targetRect = targetSibling.getBoundingClientRect();
+            const midY = targetRect.top + targetRect.height / 2;
+            const shouldInsertBefore = moveEvent.clientY < midY;
+
+            const alreadyInPosition = shouldInsertBefore
+              ? movableRow.nextElementSibling === targetSibling
+              : targetSibling.nextElementSibling === movableRow;
+
+            if (!alreadyInPosition) {
+              // FLIP Step 1 (FIRST): Record current top positions of all other rows
+              const firstPositions = new Map();
+              siblings.forEach((sib) => {
+                if (sib !== movableRow) {
+                  firstPositions.set(sib, sib.getBoundingClientRect().top);
+                }
+              });
+
+              // FLIP Step 2 (LAST): Swap DOM nodes
+              safeMutate(() => {
+                if (shouldInsertBefore) {
+                  container.insertBefore(movableRow, targetSibling);
+                } else {
+                  container.insertBefore(movableRow, targetSibling.nextSibling);
+                }
+              });
+
+              // FLIP Step 3 & 4 (INVERT & PLAY): Smoothly glide displaced sibling rows
+              siblings.forEach((sib) => {
+                if (sib === movableRow) return;
+                const firstTop = firstPositions.get(sib);
+                if (firstTop === undefined) return;
+                const lastTop = sib.getBoundingClientRect().top;
+                const deltaY = firstTop - lastTop;
+
+                if (Math.abs(deltaY) > 1) {
+                  sib.dataset.sabFlipping = 'true';
+                  sib.style.transition = 'none';
+                  sib.style.transform = `translate3d(0, ${deltaY}px, 0)`;
+
+                  // Force reflow so browser registers inverted start state
+                  void sib.offsetHeight;
+
+                  sib.style.transition = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
+                  sib.style.transform = 'translate3d(0, 0, 0)';
+
+                  clearTimeout(sib._sabFlipTimer);
+                  sib._sabFlipTimer = setTimeout(() => {
+                    sib.style.transition = '';
+                    sib.style.transform = '';
+                    delete sib.dataset.sabFlipping;
+                  }, 225);
+                }
+              });
+            }
           }
+
+          // 2. Keep the dragged card smoothly locked under the cursor
+          const layoutTop = movableRow.getBoundingClientRect().top - currentTranslateY;
+          const desiredVisualTop = moveEvent.clientY - grabOffsetWithinRow;
+          currentTranslateY = desiredVisualTop - layoutTop;
+
+          movableRow.style.transition = 'none';
+          movableRow.style.transform = `translate3d(0, ${currentTranslateY}px, 0) scale(1.02)`;
         };
 
         const onMouseUp = () => {
@@ -553,7 +613,19 @@
           document.removeEventListener('mouseup', onMouseUp, true);
           document.body.style.userSelect = '';
           document.body.style.cursor = '';
-          innerRow.classList.remove('sab-dragging');
+
+          // Smoothly animate the dragged card settling into its final slot
+          movableRow.style.transition = 'transform 190ms cubic-bezier(0.22, 1, 0.36, 1)';
+          movableRow.style.transform = 'translate3d(0, 0, 0) scale(1)';
+
+          setTimeout(() => {
+            innerRow.classList.remove('sab-dragging');
+            innerRow.classList.add('sab-drop-settled');
+            movableRow.style.transition = '';
+            movableRow.style.transform = '';
+            movableRow.style.zIndex = '';
+            setTimeout(() => innerRow.classList.remove('sab-drop-settled'), 480);
+          }, 190);
 
           // Sync the new visual order of "Next in queue" into customQueue
           const updatedInfo = getNativeQueueRowsInfo();
@@ -804,13 +876,11 @@
         const target = e.target;
         if (!(target instanceof Element)) return;
 
-        // Track "..." more button on a track row
         const rowForMore = target.closest(SELECTORS.trackRow);
         if (rowForMore && target.closest(SELECTORS.moreButton)) {
           pendingContextTrack = extractTrackFromRow(rowForMore);
         }
 
-        // 0. Native "Add to queue" context-menu item
         const menuItem = target.closest(SELECTORS.menuItem);
         if (menuItem && config.customQueueEnabled) {
           const text = (menuItem.textContent || '').trim().toLowerCase();
@@ -820,21 +890,18 @@
           }
         }
 
-        // 0b. Native "Clear queue" button inside Spotify's Queue sidebar
         const clickedText = (target.textContent || '').trim().toLowerCase();
         if (clickedText === 'clear queue') {
           customQueue = [];
           saveCustomQueue();
         }
 
-        // 1. Native Queue Button -> Ensure (=) drag handles attach as soon as sidebar opens
         const queueBtn = target.closest(SELECTORS.queueButton);
         if (queueBtn && config.customQueueEnabled) {
           setTimeout(() => safeMutate(() => enhanceNativeQueuePanel()), 200);
           setTimeout(() => safeMutate(() => enhanceNativeQueuePanel()), 500);
         }
 
-        // 2. Native Next / Skip Forward Button
         const nextBtn = target.closest(SELECTORS.skipForward);
         if (nextBtn) {
           if (isAdCurrentlyPlaying) {
@@ -867,7 +934,6 @@
           return;
         }
 
-        // 3. Native Previous / Skip Back Button
         const prevBtn = target.closest(SELECTORS.skipBack);
         if (prevBtn) {
           const mediaBefore = getActiveMediaElement();
@@ -1091,7 +1157,6 @@
 
   startObserver();
 
-  // Check native Queue sidebar & ad state once per second (even while paused)
   setInterval(() => {
     if (config.customQueueEnabled) {
       safeMutate(() => enhanceNativeQueuePanel());

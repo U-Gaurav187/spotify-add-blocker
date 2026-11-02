@@ -55,7 +55,7 @@ html.sab-unlock-controls [data-testid="progress-bar"] {
   position: absolute !important;
   left: 2px !important;
   top: 50% !important;
-  transform: translateY(-50%) !important;
+  transform: translateY(-50%) scale(1) !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -63,26 +63,53 @@ html.sab-unlock-controls [data-testid="progress-bar"] {
   height: 28px !important;
   color: #b3b3b3 !important;
   cursor: grab !important;
-  border-radius: 4px !important;
+  border-radius: 5px !important;
   user-select: none !important;
   z-index: 30 !important;
-  transition: color 0.15s, background 0.15s !important;
+  transition: color 0.16s ease, background-color 0.16s ease, transform 0.16s ease !important;
 }
 
 .sab-native-queue-drag:hover {
   color: #1ed760 !important;
-  background: rgba(255, 255, 255, 0.1) !important;
+  background: rgba(29, 185, 84, 0.14) !important;
+  transform: translateY(-50%) scale(1.1) !important;
 }
 
 .sab-native-queue-drag:active {
   cursor: grabbing !important;
   color: #1ed760 !important;
+  transform: translateY(-50%) scale(0.96) !important;
 }
 
-/* Visual highlight while dragging a song in the queue */
+/* Base transition for queue rows when idle */
+.sab-queue-row-animated {
+  will-change: transform;
+  border-radius: 8px !important;
+  transition: background-color 0.18s ease, box-shadow 0.18s ease !important;
+}
+
+/* Floating lifted card state while dragging a song */
 .sab-dragging {
-  opacity: 0.88 !important;
-  background: #282828 !important;
-  outline: 1px dashed #1db954 !important;
-  border-radius: 6px !important;
+  position: relative !important;
+  z-index: 999 !important;
+  background: #262626 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.75), 0 0 0 1.5px #1db954 !important;
+  pointer-events: none !important;
+}
+
+/* Brief green pulse when a dragged song settles into its new slot */
+@keyframes sabDropPulse {
+  0% {
+    background-color: rgba(29, 185, 84, 0.28);
+    box-shadow: 0 0 0 1.5px rgba(29, 185, 84, 0.8);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 rgba(29, 185, 84, 0);
+  }
+}
+
+.sab-drop-settled {
+  animation: sabDropPulse 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
 }
