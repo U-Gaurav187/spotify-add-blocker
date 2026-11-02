@@ -1,4 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
+  const extApi = typeof browser !== 'undefined' ? browser : chrome;
+
   const unlockCheckbox = document.getElementById('unlockControls');
   const queueCheckbox = document.getElementById('customQueueEnabled');
   const muteCheckbox = document.getElementById('muteAds');
@@ -16,7 +18,37 @@ document.addEventListener('DOMContentLoaded', () => {
     adsBlockedCount: 0
   };
 
-  chrome.storage.local.get(DEFAULTS, (data) => {
+  function getStorage(keys) {
+    return new Promise((resolve) => {
+      try {
+        const p = extApi.storage.local.get(keys, (res) => {
+          resolve(res || keys);
+        });
+        if (p && typeof p.then === 'function') {
+          p.then(resolve).catch(() => resolve(keys));
+        }
+      } catch (_) {
+        resolve(keys);
+      }
+    });
+  }
+
+  function setStorage(data) {
+    return new Promise((resolve) => {
+      try {
+        const p = extApi.storage.local.set(data, () => {
+          resolve();
+        });
+        if (p && typeof p.then === 'function') {
+          p.then(resolve).catch(() => resolve());
+        }
+      } catch (_) {
+        resolve();
+      }
+    });
+  }
+
+  getStorage(DEFAULTS).then((data) => {
     unlockCheckbox.checked = !!data.unlockControls;
     queueCheckbox.checked = !!data.customQueueEnabled;
     muteCheckbox.checked = !!data.muteAds;
@@ -26,34 +58,36 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   unlockCheckbox.addEventListener('change', () => {
-    chrome.storage.local.set({ unlockControls: unlockCheckbox.checked });
+    setStorage({ unlockControls: unlockCheckbox.checked });
   });
 
   queueCheckbox.addEventListener('change', () => {
-    chrome.storage.local.set({ customQueueEnabled: queueCheckbox.checked });
+    setStorage({ customQueueEnabled: queueCheckbox.checked });
   });
 
   muteCheckbox.addEventListener('change', () => {
-    chrome.storage.local.set({ muteAds: muteCheckbox.checked });
+    setStorage({ muteAds: muteCheckbox.checked });
   });
 
   ffCheckbox.addEventListener('change', () => {
-    chrome.storage.local.set({ fastForwardAds: ffCheckbox.checked });
+    setStorage({ fastForwardAds: ffCheckbox.checked });
   });
 
   bannersCheckbox.addEventListener('change', () => {
-    chrome.storage.local.set({ hideBanners: bannersCheckbox.checked });
+    setStorage({ hideBanners: bannersCheckbox.checked });
   });
 
   resetBtn.addEventListener('click', () => {
-    chrome.storage.local.set({ adsBlockedCount: 0 }, () => {
+    setStorage({ adsBlockedCount: 0 }).then(() => {
       adsCountEl.textContent = '0';
     });
   });
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.adsBlockedCount) {
-      adsCountEl.textContent = changes.adsBlockedCount.newValue || 0;
-    }
-  });
+  if (extApi.storage && extApi.storage.onChanged) {
+    extApi.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.adsBlockedCount) {
+        adsCountEl.textContent = changes.adsBlockedCount.newValue || 0;
+      }
+    });
+  }
 });

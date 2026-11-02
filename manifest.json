@@ -3,12 +3,22 @@
   "name": "Spotify Web Ad Silencer & Native Queue Controller",
   "version": "3.0.0",
   "description": "Silences/skips ads and unlocks unlimited skips, seek-bar scrubbing, custom queue ordering, and on-demand song playback directly via Spotify's native buttons.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "spotify-controller@example.com",
+      "strict_min_version": "128.0"
+    }
+  },
   "permissions": [
     "storage",
     "declarativeNetRequest"
   ],
   "host_permissions": [
-    "https://open.spotify.com/*"
+    "https://open.spotify.com/*",
+    "https://*.spotify.com/*",
+    "https://*.doubleclick.net/*",
+    "https://*.googlesyndication.com/*",
+    "https://*.googleadservices.com/*"
   ],
   "declarative_net_request": {
     "rule_resources": [
@@ -38,23 +48,22 @@
         "https://open.spotify.com/*"
       ],
       "js": [
-        "page_hook.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN"
-    },
-    {
-      "matches": [
-        "https://open.spotify.com/*"
-      ],
-      "js": [
         "content.js"
       ],
       "css": [
         "styles.css"
       ],
-      "run_at": "document_start",
-      "world": "ISOLATED"
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "page_hook.js"
+      ],
+      "matches": [
+        "https://open.spotify.com/*"
+      ]
     }
   ]
 }

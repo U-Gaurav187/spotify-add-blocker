@@ -1,6 +1,10 @@
 (() => {
   'use strict';
 
+  // Prevent multiple injections if injected dynamically and via manifest
+  if (window.__sab_hook_installed) return;
+  window.__sab_hook_installed = true;
+
   const trackedMedia = new Set();
   let isAdCurrentlyPlaying = false;
   let userVolumeBeforeAd = 1;
@@ -13,6 +17,21 @@
   let isTransitioningQueueTrack = false;
   let lastcapturedTrackInfo = null;
   let pendingContextTrack = null;
+
+  // Internal mutation & debounce guards to prevent observer feedback loops
+  let isInternalMutation = false;
+  let observerDebounceTimer = null;
+
+  function safeMutate(fn) {
+    isInternalMutation = true;
+    try {
+      fn();
+    } finally {
+      Promise.resolve().then(() => {
+        isInternalMutation = false;
+      });
+    }
+  }
 
   let config = {
     muteAds: true,
@@ -33,21 +52,32 @@
     try {
       localStorage.setItem('sab_custom_queue_v3', JSON.stringify(customQueue));
     } catch (_) {}
-    renderCustomQueueDrawer();
-    updateNativeQueueBadge();
+    safeMutate(() => {
+      renderCustomQueueDrawer();
+      updateNativeQueueBadge();
+    });
   }
 
+  // Cross-world handshake: listen for configuration updates
   window.addEventListener('SpotifyAdBlocker:Config', (e) => {
     if (e.detail) {
       config = { ...config, ...e.detail };
-      document.documentElement.classList.toggle('sab-hide-banners', !!config.hideBanners);
-      document.documentElement.classList.toggle('sab-unlock-controls', !!config.unlockControls);
+      if (document.documentElement) {
+        document.documentElement.classList.toggle('sab-hide-banners', !!config.hideBanners);
+        document.documentElement.classList.toggle('sab-unlock-controls', !!config.unlockControls);
+      }
       if (config.unlockControls) {
-        unlockNativeButtons();
+        safeMutate(() => {
+          unlockNativeButtons();
+        });
       }
       renderCustomQueueDrawer();
     }
   });
+
+  // Signal readiness to content script and request active config
+  window.dispatchEvent(new CustomEvent('SpotifyAdBlocker:Ready'));
+  window.dispatchEvent(new CustomEvent('SpotifyAdBlocker:RequestConfig'));
 
   // ============================================================================
   // 1. STRIP PLAYBACK & QUEUE RESTRICTIONS FROM SPOTIFY STATE PAYLOADS
@@ -73,10 +103,13 @@
     'disallow_removing_from_context_tracks_reasons'
   ];
 
-  function stripRestrictionsFromObject(obj, depth = 0) {
+  function stripRestrictionsFromObject(obj, depth = 0, seen = new WeakSet()) {
     if (!config.unlockControls || !obj || typeof obj !== 'object' || depth > 6) {
       return obj;
     }
+
+    if (seen.has(obj)) return obj;
+    seen.add(obj);
 
     if (obj.restrictions && typeof obj.restrictions === 'object') {
       for (const key of RESTRICTION_KEYS) {
@@ -95,7 +128,7 @@
     for (const k of Object.keys(obj)) {
       const val = obj[k];
       if (val && typeof val === 'object') {
-        stripRestrictionsFromObject(val, depth + 1);
+        stripRestrictionsFromObject(val, depth + 1, seen);
       }
     }
     return obj;
@@ -116,14 +149,15 @@
     return parsed;
   };
 
+  // Intercept Response.prototype.json safely without breaking streams or hanging
   const origResponseJson = Response.prototype.json;
   Response.prototype.json = async function (...args) {
     const data = await origResponseJson.apply(this, args);
-    if (config.unlockControls && data && typeof data === 'object') {
-      try {
+    try {
+      if (config.unlockControls && data && typeof data === 'object') {
         stripRestrictionsFromObject(data);
-      } catch (_) {}
-    }
+      }
+    } catch (_) {}
     return data;
   };
 
@@ -133,10 +167,16 @@
   function registerMediaElement(el) {
     if (el instanceof HTMLMediaElement && !trackedMedia.has(el)) {
       trackedMedia.add(el);
-      el.addEventListener('play', evaluateAdState);
+
+      // Async evaluation prevents interfering with browser DRM / MediaKey negotiations
+      el.addEventListener('play', () => {
+        setTimeout(evaluateAdState, 0);
+      });
       el.addEventListener('loadedmetadata', () => {
-        evaluateAdState();
-        recordCurrentTrackToHistory();
+        setTimeout(() => {
+          evaluateAdState();
+          recordCurrentTrackToHistory();
+        }, 0);
       });
       el.addEventListener('timeupdate', () => {
         if (isAdCurrentlyPlaying) {
@@ -162,26 +202,42 @@
   const origCreateElement = document.createElement;
   document.createElement = function (tagName, options) {
     const el = origCreateElement.call(this, tagName, options);
-    const tag = String(tagName).toLowerCase();
-    if (tag === 'audio' || tag === 'video') {
-      registerMediaElement(el);
-    }
+    try {
+      const tag = String(tagName).toLowerCase();
+      if (tag === 'audio' || tag === 'video') {
+        registerMediaElement(el);
+      }
+    } catch (_) {}
     return el;
   };
 
-  const OrigAudio = window.Audio;
-  window.Audio = function (...args) {
-    const audio = new OrigAudio(...args);
-    registerMediaElement(audio);
-    return audio;
-  };
-  window.Audio.prototype = OrigAudio.prototype;
+  if (window.Audio) {
+    const OrigAudio = window.Audio;
+    window.Audio = function (...args) {
+      const audio = new OrigAudio(...args);
+      try {
+        registerMediaElement(audio);
+      } catch (_) {}
+      return audio;
+    };
+    window.Audio.prototype = OrigAudio.prototype;
+  }
 
+  // Cross-browser safe HTMLMediaElement.prototype.play hook:
+  // Never perform synchronous blocking work or heavy DOM manipulation inside play().
+  // Return the native promise immediately so Edge PlayReady and Chrome Widevine DRM pipelines stay intact.
   const origPlay = HTMLMediaElement.prototype.play;
   HTMLMediaElement.prototype.play = function (...args) {
-    registerMediaElement(this);
-    evaluateAdState();
-    return origPlay.apply(this, args);
+    try {
+      registerMediaElement(this);
+    } catch (_) {}
+    const playPromise = origPlay.apply(this, args);
+    setTimeout(() => {
+      try {
+        evaluateAdState();
+      } catch (_) {}
+    }, 0);
+    return playPromise;
   };
 
   function getAllMediaElements() {
@@ -439,6 +495,7 @@
   }
 
   function showStatusToast(message) {
+    if (!document.body) return;
     let toast = document.getElementById('sab-status-toast');
     if (!toast) {
       toast = document.createElement('div');
@@ -454,6 +511,7 @@
   }
 
   function toggleCustomQueueDrawer(forceState) {
+    if (!document.body) return;
     let drawer = document.getElementById('sab-custom-queue-drawer');
     if (!drawer) {
       drawer = document.createElement('div');
@@ -467,6 +525,7 @@
   }
 
   function renderCustomQueueDrawer() {
+    if (!document.body) return;
     const drawer = document.getElementById('sab-custom-queue-drawer');
     if (!drawer) return;
 
@@ -798,7 +857,9 @@
   }
 
   function evaluateAdState() {
-    unlockNativeButtons();
+    safeMutate(() => {
+      unlockNativeButtons();
+    });
 
     const { isAd, label } = detectAd();
     const mediaList = getAllMediaElements();
@@ -830,15 +891,56 @@
     }
   }
 
+  // ============================================================================
+  // 6. SAFE OBSERVER & DOM LIFECYCLE MANAGEMENT
+  // ============================================================================
   function startObserver() {
     if (!document.body) {
-      requestAnimationFrame(startObserver);
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', startObserver, { once: true });
+      } else {
+        requestAnimationFrame(startObserver);
+      }
       return;
     }
+
     attachNativeControlListeners();
-    const observer = new MutationObserver(() => {
-      evaluateAdState();
+
+    // Debounced MutationObserver with isInternalMutation guard to prevent event loop freezes
+    const observer = new MutationObserver((mutations) => {
+      if (isInternalMutation) return;
+
+      // Filter out internal mutations produced by our own UI elements
+      let hasExternalChanges = false;
+      for (const m of mutations) {
+        const target = m.target;
+        if (target instanceof Element) {
+          if (
+            target.id === 'sab-status-toast' ||
+            target.id === 'sab-custom-queue-drawer' ||
+            target.classList.contains('sab-row-queue-btn') ||
+            target.classList.contains('sab-queue-count-badge') ||
+            target.closest('#sab-status-toast') ||
+            target.closest('#sab-custom-queue-drawer')
+          ) {
+            continue;
+          }
+        }
+        hasExternalChanges = true;
+        break;
+      }
+
+      if (!hasExternalChanges) return;
+
+      if (observerDebounceTimer) {
+        clearTimeout(observerDebounceTimer);
+      }
+      observerDebounceTimer = setTimeout(() => {
+        observerDebounceTimer = null;
+        evaluateAdState();
+      }, 300);
     });
+
     observer.observe(document.body, {
       childList: true,
       subtree: true,
@@ -848,5 +950,11 @@
   }
 
   startObserver();
-  setInterval(evaluateAdState, 500);
+
+  // Low-frequency heartbeat to ensure ad mitigations are maintained even during silent playback changes
+  setInterval(() => {
+    if (isAdCurrentlyPlaying || (trackedMedia.size > 0 && Array.from(trackedMedia).some((m) => !m.paused))) {
+      evaluateAdState();
+    }
+  }, 1000);
 })();
