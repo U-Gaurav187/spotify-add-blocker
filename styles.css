@@ -43,7 +43,8 @@ html.sab-unlock-controls [data-testid="progress-bar"] {
   white-space: nowrap;
 }
 
-[data-testid="tracklist-row"]:hover .sab-row-queue-btn {
+[data-testid="tracklist-row"]:hover .sab-row-queue-btn,
+[role="row"]:hover .sab-row-queue-btn {
   opacity: 1;
 }
 
