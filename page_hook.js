@@ -213,28 +213,129 @@
   window.dispatchEvent(new CustomEvent('SpotifyAdBlocker:Ready'));
   window.dispatchEvent(new CustomEvent('SpotifyAdBlocker:RequestConfig'));
 
-  // Auto-dismiss "Continue in the Spotify app" or mobile app upsell dialogs
+  // ============================================================================
+  // AGGRESSIVE DISMISSAL: "Continue in the Spotify app" / upsell modals
+  // These appear even with Desktop UA when Spotify detects WebView or
+  // when certain playback actions are attempted.
+  // ============================================================================
   function dismissAppUpsellModals() {
     try {
-      const dialogs = document.querySelectorAll('div[role="dialog"], div[aria-modal="true"]');
+      // Strategy 1: Find and click Close/dismiss buttons on dialogs
+      const dialogs = document.querySelectorAll(
+        'div[role="dialog"], div[aria-modal="true"], div[data-testid="modal-container"], div[class*="GenericModal"]'
+      );
       for (const d of dialogs) {
         const text = (d.innerText || d.textContent || '').toLowerCase();
-        if (text.includes('spotify app') || text.includes('download app')) {
-          const closeBtn = d.querySelector('button[aria-label*="Close" i]') ||
+        if (
+          text.includes('spotify app') ||
+          text.includes('download app') ||
+          text.includes('continue in the') ||
+          text.includes('get the app') ||
+          text.includes('open in app') ||
+          text.includes('listen in the spotify app')
+        ) {
+          // Try multiple close button patterns
+          const closeBtn =
+            d.querySelector('button[aria-label*="Close" i]') ||
+            d.querySelector('button[aria-label*="Dismiss" i]') ||
             Array.from(d.querySelectorAll('button')).find(b => {
-              const t = b.textContent?.trim().toLowerCase();
+              const t = (b.textContent || '').trim().toLowerCase();
+              return t === 'close' || t === 'not now' || t === 'dismiss' || t === 'cancel' || t === 'maybe later';
+            }) ||
+            Array.from(d.querySelectorAll('a, span, div')).find(el => {
+              const t = (el.textContent || '').trim().toLowerCase();
               return t === 'close' || t === 'not now' || t === 'dismiss';
             });
+
           if (closeBtn) {
             closeBtn.click();
-          } else {
-            d.style.display = 'none';
           }
+          // Always also force-hide the dialog
+          d.style.setProperty('display', 'none', 'important');
+          d.style.setProperty('visibility', 'hidden', 'important');
+          d.style.setProperty('opacity', '0', 'important');
+          d.style.setProperty('pointer-events', 'none', 'important');
+          d.style.setProperty('position', 'absolute', 'important');
+          d.style.setProperty('z-index', '-1', 'important');
+        }
+      }
+
+      // Strategy 2: Find ANY element tree containing "Continue in the Spotify app"
+      // and nuke the top-level overlay/container
+      const allElements = document.querySelectorAll('div, section');
+      for (const el of allElements) {
+        // Only check elements that are direct children of body or high-level containers
+        // to avoid removing tiny nested spans
+        if (el.children.length === 0) continue;
+        const rect = el.getBoundingClientRect();
+        // Must be a large overlay (covering significant screen area)
+        if (rect.width < 200 || rect.height < 200) continue;
+
+        const text = (el.innerText || '').toLowerCase();
+        if (
+          (text.includes('continue in the spotify app') || text.includes('download app')) &&
+          // Don't nuke the entire page
+          el.id !== 'main' && !el.classList.contains('Root') && el.tagName !== 'BODY'
+        ) {
+          const style = window.getComputedStyle(el);
+          // Only target overlays (fixed/absolute positioned elements or elements with high z-index)
+          if (
+            style.position === 'fixed' ||
+            style.position === 'absolute' ||
+            parseInt(style.zIndex) > 100 ||
+            el.getAttribute('role') === 'dialog' ||
+            el.getAttribute('aria-modal') === 'true'
+          ) {
+            el.style.setProperty('display', 'none', 'important');
+          }
+        }
+      }
+
+      // Strategy 3: Remove any backdrop/overlay that might be blocking interaction
+      const backdrops = document.querySelectorAll(
+        'div[class*="backdrop"], div[class*="Backdrop"], div[class*="overlay"], div[class*="Overlay"]'
+      );
+      for (const bd of backdrops) {
+        const style = window.getComputedStyle(bd);
+        if (
+          (style.position === 'fixed' || style.position === 'absolute') &&
+          (style.zIndex && parseInt(style.zIndex) > 50)
+        ) {
+          // Check if it's a blocking overlay (large, covering screen)
+          const rect = bd.getBoundingClientRect();
+          if (rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.5) {
+            bd.style.setProperty('display', 'none', 'important');
+          }
+        }
+      }
+
+      // Strategy 4: Unblock body scroll if it was locked by a modal
+      if (document.body.style.overflow === 'hidden' || document.body.style.position === 'fixed') {
+        // Only restore if we found and dismissed a dialog above
+        const anyHiddenDialog = document.querySelector('div[role="dialog"][style*="display: none"]');
+        if (anyHiddenDialog) {
+          document.body.style.overflow = '';
+          document.body.style.position = '';
+          document.documentElement.style.overflow = '';
         }
       }
     } catch (_) {}
   }
-  setInterval(dismissAppUpsellModals, 1000);
+  // Run very frequently to catch modals as soon as they appear
+  setInterval(dismissAppUpsellModals, 500);
+  // Also run on every DOM mutation via a lightweight observer
+  try {
+    const upsellObserver = new MutationObserver(() => {
+      dismissAppUpsellModals();
+    });
+    if (document.body) {
+      upsellObserver.observe(document.body, { childList: true, subtree: true });
+    } else {
+      document.addEventListener('DOMContentLoaded', () => {
+        upsellObserver.observe(document.body, { childList: true, subtree: true });
+      }, { once: true });
+    }
+  } catch (_) {}
 
   // ============================================================================
   // 1. STRIP PLAYBACK & QUEUE RESTRICTIONS FROM SPOTIFY STATE PAYLOADS
