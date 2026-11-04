@@ -213,6 +213,29 @@
   window.dispatchEvent(new CustomEvent('SpotifyAdBlocker:Ready'));
   window.dispatchEvent(new CustomEvent('SpotifyAdBlocker:RequestConfig'));
 
+  // Auto-dismiss "Continue in the Spotify app" or mobile app upsell dialogs
+  function dismissAppUpsellModals() {
+    try {
+      const dialogs = document.querySelectorAll('div[role="dialog"], div[aria-modal="true"]');
+      for (const d of dialogs) {
+        const text = (d.innerText || d.textContent || '').toLowerCase();
+        if (text.includes('spotify app') || text.includes('download app')) {
+          const closeBtn = d.querySelector('button[aria-label*="Close" i]') ||
+            Array.from(d.querySelectorAll('button')).find(b => {
+              const t = b.textContent?.trim().toLowerCase();
+              return t === 'close' || t === 'not now' || t === 'dismiss';
+            });
+          if (closeBtn) {
+            closeBtn.click();
+          } else {
+            d.style.display = 'none';
+          }
+        }
+      }
+    } catch (_) {}
+  }
+  setInterval(dismissAppUpsellModals, 1000);
+
   // ============================================================================
   // 1. STRIP PLAYBACK & QUEUE RESTRICTIONS FROM SPOTIFY STATE PAYLOADS
   // ============================================================================

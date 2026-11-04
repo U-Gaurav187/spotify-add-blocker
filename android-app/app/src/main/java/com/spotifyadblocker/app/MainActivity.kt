@@ -134,13 +134,14 @@ class MainActivity : AppCompatActivity() {
         settings.databaseEnabled = true
         settings.mediaPlaybackRequiresUserGesture = false
 
+        // ALWAYS identify as Desktop Chrome so Spotify enables full audio streaming and never blocks playback with "Continue in the Spotify app"
+        settings.userAgentString = DESKTOP_USER_AGENT
+
         if (desktopView) {
-            settings.userAgentString = DESKTOP_USER_AGENT
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
         } else {
-            // Native mobile view: fits phone screen naturally without horizontal dragging
-            settings.userAgentString = null
+            // Adaptive mobile view: fits phone screen naturally without horizontal dragging
             settings.useWideViewPort = false
             settings.loadWithOverviewMode = false
         }
@@ -148,6 +149,15 @@ class MainActivity : AppCompatActivity() {
         settings.textZoom = 100
         settings.cacheMode = WebSettings.LOAD_DEFAULT
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+
+        // Ensure session and auth cookies persist across app restarts
+        try {
+            val cookieManager = android.webkit.CookieManager.getInstance()
+            cookieManager.setAcceptCookie(true)
+            cookieManager.setAcceptThirdPartyCookies(webView, true)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun registerDocumentStartHook() {
@@ -308,6 +318,17 @@ class MainActivity : AppCompatActivity() {
                         document.documentElement.classList.add('sab-mobile-fit');
                     } else {
                         document.documentElement.classList.remove('sab-mobile-fit');
+                    }
+
+                    // Enforce mobile-friendly viewport meta tag
+                    var meta = document.querySelector('meta[name="viewport"]');
+                    if (!meta) {
+                        meta = document.createElement('meta');
+                        meta.name = 'viewport';
+                        (document.head || document.documentElement).appendChild(meta);
+                    }
+                    if (!$desktopView) {
+                        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
                     }
                 } catch(e) {}
             })();
