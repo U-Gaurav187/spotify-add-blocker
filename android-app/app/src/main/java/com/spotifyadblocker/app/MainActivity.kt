@@ -41,13 +41,14 @@ class MainActivity : AppCompatActivity() {
     private val blockedUrlPatterns = CopyOnWriteArrayList<String>()
 
     private val PREFS_NAME = "sab_spotify_prefs"
+    private val KEY_MOBILE_FIT = "mobileFitEnabled"
     private val KEY_UNLOCK_CONTROLS = "unlockControls"
     private val KEY_CUSTOM_QUEUE = "customQueueEnabled"
     private val KEY_MUTE_ADS = "muteAds"
     private val KEY_FAST_FORWARD = "fastForwardAds"
     private val KEY_HIDE_BANNERS = "hideBanners"
 
-    // Modern Windows Desktop Chrome User-Agent so Spotify serves the full Web Player
+    // Modern Desktop Windows Chrome User-Agent so Spotify provides the full Web Player
     private val DESKTOP_USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
@@ -55,6 +56,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Enable Chrome DevTools remote debugging
+        WebView.setWebContentsDebuggingEnabled(true)
 
         otaSyncManager = OtaSyncManager(this)
 
@@ -68,7 +72,7 @@ class MainActivity : AppCompatActivity() {
         // Load active declarative network rules into memory
         reloadNetworkRules()
 
-        // Configure WebView settings
+        // Configure WebView settings (disable wide viewport zoom to fit phone width)
         configureWebSettings()
 
         // Set up document_start JavaScript injection
@@ -110,8 +114,12 @@ class MainActivity : AppCompatActivity() {
         settings.domStorageEnabled = true
         settings.databaseEnabled = true
         settings.mediaPlaybackRequiresUserGesture = false
-        settings.useWideViewPort = true
-        settings.loadWithOverviewMode = true
+
+        // Match mobile screen dimensions instead of zooming out like a desktop monitor
+        settings.useWideViewPort = false
+        settings.loadWithOverviewMode = false
+        settings.textZoom = 100
+
         settings.cacheMode = WebSettings.LOAD_DEFAULT
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
     }
@@ -163,7 +171,7 @@ class MainActivity : AppCompatActivity() {
             e.printStackTrace()
         }
 
-        // Always include foundational telemetry/ad tracking endpoints
+        // Foundational telemetry/ad tracking endpoints
         val fallbackDomains = listOf(
             "doubleclick.net",
             "googlesyndication.com",
@@ -252,6 +260,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun injectCustomStylesAndClasses() {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val mobileFit = prefs.getBoolean(KEY_MOBILE_FIT, true)
+
         val css = otaSyncManager.getFileContent(
             OtaSyncManager.OTA_STYLES,
             OtaSyncManager.FALLBACK_STYLES
@@ -261,6 +272,16 @@ class MainActivity : AppCompatActivity() {
         val js = """
             (function() {
                 try {
+                    // 1. Enforce responsive mobile viewport meta
+                    var meta = document.querySelector('meta[name="viewport"]');
+                    if (!meta) {
+                        meta = document.createElement('meta');
+                        meta.name = 'viewport';
+                        document.head.appendChild(meta);
+                    }
+                    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+
+                    // 2. Inject responsive & ad blocking CSS
                     var styleEl = document.getElementById('sab-injected-css');
                     if (!styleEl) {
                         styleEl = document.createElement('style');
@@ -268,7 +289,14 @@ class MainActivity : AppCompatActivity() {
                         (document.head || document.documentElement).appendChild(styleEl);
                     }
                     styleEl.textContent = $escapedCss;
+
+                    // 3. Apply class states
                     document.documentElement.classList.add('sab-hide-banners', 'sab-unlock-controls');
+                    if ($mobileFit) {
+                        document.documentElement.classList.add('sab-mobile-fit');
+                    } else {
+                        document.documentElement.classList.remove('sab-mobile-fit');
+                    }
                 } catch(e) {}
             })();
         """.trimIndent()
@@ -339,6 +367,11 @@ class MainActivity : AppCompatActivity() {
         val btnReload = view.findViewById<MaterialButton>(R.id.btnReloadPage)
         val btnClose = view.findViewById<MaterialButton>(R.id.btnCloseDialog)
 
+        val btnHome = view.findViewById<MaterialButton>(R.id.btnNavHome)
+        val btnSearch = view.findViewById<MaterialButton>(R.id.btnNavSearch)
+        val btnLibrary = view.findViewById<MaterialButton>(R.id.btnNavLibrary)
+
+        val swMobileFit = view.findViewById<SwitchMaterial>(R.id.switchMobileFit)
         val swUnlock = view.findViewById<SwitchMaterial>(R.id.switchUnlockControls)
         val swQueue = view.findViewById<SwitchMaterial>(R.id.switchCustomQueue)
         val swMute = view.findViewById<SwitchMaterial>(R.id.switchMuteAds)
@@ -346,6 +379,7 @@ class MainActivity : AppCompatActivity() {
         val swBanners = view.findViewById<SwitchMaterial>(R.id.switchHideBanners)
 
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        swMobileFit.isChecked = prefs.getBoolean(KEY_MOBILE_FIT, true)
         swUnlock.isChecked = prefs.getBoolean(KEY_UNLOCK_CONTROLS, true)
         swQueue.isChecked = prefs.getBoolean(KEY_CUSTOM_QUEUE, true)
         swMute.isChecked = prefs.getBoolean(KEY_MUTE_ADS, true)
@@ -363,20 +397,38 @@ class MainActivity : AppCompatActivity() {
 
         fun saveAndSync() {
             prefs.edit()
+                .putBoolean(KEY_MOBILE_FIT, swMobileFit.isChecked)
                 .putBoolean(KEY_UNLOCK_CONTROLS, swUnlock.isChecked)
                 .putBoolean(KEY_CUSTOM_QUEUE, swQueue.isChecked)
                 .putBoolean(KEY_MUTE_ADS, swMute.isChecked)
                 .putBoolean(KEY_FAST_FORWARD, swFast.isChecked)
                 .putBoolean(KEY_HIDE_BANNERS, swBanners.isChecked)
                 .apply()
+            injectCustomStylesAndClasses()
             syncConfigToWebView()
         }
 
+        swMobileFit.setOnCheckedChangeListener { _, _ -> saveAndSync() }
         swUnlock.setOnCheckedChangeListener { _, _ -> saveAndSync() }
         swQueue.setOnCheckedChangeListener { _, _ -> saveAndSync() }
         swMute.setOnCheckedChangeListener { _, _ -> saveAndSync() }
         swFast.setOnCheckedChangeListener { _, _ -> saveAndSync() }
         swBanners.setOnCheckedChangeListener { _, _ -> saveAndSync() }
+
+        btnHome.setOnClickListener {
+            webView.loadUrl("https://open.spotify.com/")
+            dialog.dismiss()
+        }
+
+        btnSearch.setOnClickListener {
+            webView.loadUrl("https://open.spotify.com/search")
+            dialog.dismiss()
+        }
+
+        btnLibrary.setOnClickListener {
+            webView.loadUrl("https://open.spotify.com/collection/playlists")
+            dialog.dismiss()
+        }
 
         btnSync.setOnClickListener {
             btnSync.isEnabled = false

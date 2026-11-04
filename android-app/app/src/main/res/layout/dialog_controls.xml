@@ -53,12 +53,64 @@
         android:textColor="@color/spotify_subtext"
         android:textSize="12sp" />
 
+    <!-- Quick Navigation Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnNavHome"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:text="🏠 Home"
+            android:textAllCaps="false"
+            android:textColor="@color/spotify_white"
+            android:textSize="12sp"
+            app:cornerRadius="20dp"
+            app:strokeColor="@color/spotify_border" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnNavSearch"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:text="🔍 Search"
+            android:textAllCaps="false"
+            android:textColor="@color/spotify_white"
+            android:textSize="12sp"
+            app:cornerRadius="20dp"
+            app:strokeColor="@color/spotify_border" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnNavLibrary"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:text="📚 Library"
+            android:textAllCaps="false"
+            android:textColor="@color/spotify_white"
+            android:textSize="12sp"
+            app:cornerRadius="20dp"
+            app:strokeColor="@color/spotify_border" />
+    </LinearLayout>
+
     <!-- GitHub Sync Button -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSyncGithub"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="12dp"
         android:backgroundTint="@color/spotify_green"
         android:text="Sync Updates from GitHub"
         android:textAllCaps="false"
@@ -71,11 +123,20 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginTop="16dp"
-        android:layout_marginBottom="12dp"
+        android:layout_marginTop="14dp"
+        android:layout_marginBottom="10dp"
         android:background="@color/spotify_border" />
 
     <!-- Feature Toggles -->
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchMobileFit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:checked="true"
+        android:text="📱 Auto-Fit Mobile Screen (No Dragging)"
+        android:textColor="@color/spotify_white"
+        app:useMaterialThemeColors="true" />
+
     <com.google.android.material.switchmaterial.SwitchMaterial
         android:id="@+id/switchUnlockControls"
         android:layout_width="match_parent"
@@ -124,7 +185,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="14dp"
         android:gravity="end"
         android:orientation="horizontal">
 
