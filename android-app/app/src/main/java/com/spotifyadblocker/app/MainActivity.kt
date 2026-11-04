@@ -1,11 +1,15 @@
 package com.spotifyadblocker.app
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
+import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -53,10 +57,30 @@ class MainActivity : AppCompatActivity() {
     private val DESKTOP_USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
+    class AndroidBridge(private val activity: MainActivity) {
+        @JavascriptInterface
+        fun showKeyboard() {
+            activity.forceShowKeyboard()
+        }
+    }
+
+    fun forceShowKeyboard() {
+        runOnUiThread {
+            webView.requestFocus()
+            webView.requestFocusFromTouch()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(webView, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Ensure soft input mode and clear flags preventing IME focus on Xiaomi HyperOS
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
 
         // Enable Chrome DevTools remote debugging
         WebView.setWebContentsDebuggingEnabled(true)
@@ -67,10 +91,21 @@ class MainActivity : AppCompatActivity() {
         pageProgressBar = findViewById(R.id.pageProgressBar)
         fabControllerMenu = findViewById(R.id.fabControllerMenu)
 
+        webView.addJavascriptInterface(AndroidBridge(this), "AndroidBridge")
+
         // Ensure touch focus for soft keyboard (fixes Xiaomi / MIUI / HyperOS IME issue)
         webView.isFocusable = true
         webView.isFocusableInTouchMode = true
         webView.requestFocus(View.FOCUS_DOWN)
+
+        // Persist login session cookies across open.spotify.com and accounts.spotify.com
+        try {
+            val cookieManager = CookieManager.getInstance()
+            cookieManager.setAcceptCookie(true)
+            cookieManager.setAcceptThirdPartyCookies(webView, true)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
         webView.setOnTouchListener { v, event ->
             when (event.action) {
@@ -245,6 +280,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun configureWebViewClient() {
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                val url = request?.url?.toString() ?: return false
+
+                // Block deep links that try to open the native Spotify app or Play Store
+                if (url.startsWith("spotify:") || url.startsWith("intent:") || url.contains("spotify.link") || url.contains("app.adjust.com")) {
+                    return true
+                }
+
+                // Allow Spotify Web Player and Spotify Login (accounts.spotify.com) inside the WebView
+                return false
+            }
+
             override fun shouldInterceptRequest(
                 view: WebView?,
                 request: WebResourceRequest?
@@ -285,8 +332,37 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
+                try {
+                    CookieManager.getInstance().flush()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
                 injectCustomStylesAndClasses()
                 syncConfigToWebView()
+
+                // Ensure tapping <input> on both open.spotify.com AND accounts.spotify.com pops up the keyboard on HyperOS
+                view?.evaluateJavascript(
+                    """
+                    (function() {
+                        if (window.__sab_kb_bound) return;
+                        window.__sab_kb_bound = true;
+                        function triggerKb(e) {
+                            var el = e.target;
+                            if (!el) return;
+                            var tag = el.tagName ? el.tagName.toUpperCase() : '';
+                            if (tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable || el.getAttribute('role') === 'searchbox') {
+                                if (window.AndroidBridge && typeof window.AndroidBridge.showKeyboard === 'function') {
+                                    window.AndroidBridge.showKeyboard();
+                                }
+                            }
+                        }
+                        document.addEventListener('touchend', triggerKb, true);
+                        document.addEventListener('focusin', triggerKb, true);
+                        document.addEventListener('click', triggerKb, true);
+                    })();
+                    """.trimIndent(),
+                    null
+                )
             }
         }
     }

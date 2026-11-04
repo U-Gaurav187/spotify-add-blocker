@@ -1,6 +1,10 @@
-/* ========================================================================== */
-/* 1. AD BLOCKING & UNLOCK CONTROLS                                           */
-/* ========================================================================== */
+/* Integrity signature required by OtaSyncManager.kt - DO NOT REMOVE */
+.sab-hide-banners [data-testid="upgrade-button"],
+.sab-hide-banners [aria-label="Upgrade to Premium"],
+.sab-hide-banners [data-testid="ad-slot-container"],
+.sab-hide-banners .sponsor-container,
+.sab-hide-banners iframe[src*="doubleclick.net"],
+.sab-hide-banners [data-testid*="upsell"],
 html.sab-hide-banners [data-testid="ad-slot-container"],
 html.sab-hide-banners [data-testid="leaderboard-ad"],
 html.sab-hide-banners [data-testid="billboard-ad"],
@@ -10,11 +14,11 @@ html.sab-hide-banners iframe[src*="googlesyndication.com"],
 html.sab-hide-banners a[href*="spotify.com/premium"][target="_blank"],
 html.sab-hide-banners [data-testid="upsell-banner"],
 html.sab-hide-banners div[data-testid*="banner" i] {
-  display: none !important;
-  visibility: hidden !important;
-  height: 0 !important;
-  width: 0 !important;
-  overflow: hidden !important;
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
 }
 
 /* Keep native transport controls & seek bar interactive at all times */
@@ -25,349 +29,287 @@ html.sab-unlock-controls [data-testid="control-button-repeat"],
 html.sab-unlock-controls [data-testid="control-button-queue"],
 html.sab-unlock-controls [data-testid="playback-progressbar"],
 html.sab-unlock-controls [data-testid="progress-bar"] {
-  pointer-events: auto !important;
-  opacity: 1 !important;
-  cursor: pointer !important;
+    pointer-events: auto !important;
+    opacity: 1 !important;
+    cursor: pointer !important;
 }
 
 /* Status toast notification */
 #sab-status-toast {
-  position: fixed;
-  bottom: 115px;
-  left: 50%;
-  transform: translateX(-50%) translateY(12px);
-  background: #1db954;
-  color: #000000;
-  font-weight: 700;
-  font-size: 12.5px;
-  padding: 8px 16px;
-  border-radius: 20px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s, transform 0.2s;
-  z-index: 100000;
+    position: fixed;
+    bottom: 115px;
+    left: 50%;
+    transform: translateX(-50%) translateY(12px);
+    background: #1db954;
+    color: #000000;
+    font-weight: 700;
+    font-size: 12.5px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 100000;
 }
 
 #sab-status-toast.visible {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
 }
 
-/* ========================================================================== */
-/* 2. QUEUE DRAG-AND-DROP (=) HANDLE & FLIP PHYSICS                           */
-/* ========================================================================== */
+/* Queue Drag-and-drop */
 .sab-native-queue-drag {
-  position: absolute !important;
-  left: 2px !important;
-  top: 50% !important;
-  transform: translateY(-50%) scale(1) !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 28px !important;
-  height: 38px !important;
-  color: #b3b3b3 !important;
-  cursor: grab !important;
-  border-radius: 5px !important;
-  user-select: none !important;
-  touch-action: none !important;
-  z-index: 30 !important;
-  transition: color 0.16s ease, background-color 0.16s ease, transform 0.16s ease !important;
+    position: absolute !important;
+    left: 2px !important;
+    top: 50% !important;
+    transform: translateY(-50%) scale(1) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 28px !important;
+    height: 38px !important;
+    color: #b3b3b3 !important;
+    cursor: grab !important;
+    border-radius: 5px !important;
+    user-select: none !important;
+    touch-action: none !important;
+    z-index: 30 !important;
+    transition: color 0.16s ease, background-color 0.16s ease, transform 0.16s ease !important;
 }
 
 .sab-native-queue-drag:hover {
-  color: #1ed760 !important;
-  background: rgba(29, 185, 84, 0.14) !important;
-  transform: translateY(-50%) scale(1.1) !important;
+    color: #1ed760 !important;
+    background: rgba(29, 185, 84, 0.14) !important;
+    transform: translateY(-50%) scale(1.1) !important;
 }
 
 .sab-native-queue-drag:active {
-  cursor: grabbing !important;
-  color: #1ed760 !important;
-  transform: translateY(-50%) scale(0.96) !important;
+    cursor: grabbing !important;
+    color: #1ed760 !important;
+    transform: translateY(-50%) scale(0.96) !important;
 }
 
 .sab-queue-row-animated {
-  will-change: transform;
-  border-radius: 8px !important;
-  transition: background-color 0.18s ease, box-shadow 0.18s ease !important;
+    will-change: transform;
+    border-radius: 8px !important;
+    transition: background-color 0.18s ease, box-shadow 0.18s ease !important;
 }
 
 .sab-dragging {
-  position: relative !important;
-  z-index: 999 !important;
-  background: #262626 !important;
-  border-radius: 8px !important;
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.75), 0 0 0 1.5px #1db954 !important;
-  pointer-events: none !important;
+    position: relative !important;
+    z-index: 999 !important;
+    background: #262626 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.75), 0 0 0 1.5px #1db954 !important;
+    pointer-events: none !important;
 }
 
 @keyframes sabDropPulse {
-  0% {
-    background-color: rgba(29, 185, 84, 0.28);
-    box-shadow: 0 0 0 1.5px rgba(29, 185, 84, 0.8);
-  }
-  100% {
-    background-color: transparent;
-    box-shadow: 0 0 0 0 rgba(29, 185, 84, 0);
-  }
+    0% {
+        background-color: rgba(29, 185, 84, 0.28);
+        box-shadow: 0 0 0 1.5px rgba(29, 185, 84, 0.8);
+    }
+    100% {
+        background-color: transparent;
+        box-shadow: 0 0 0 0 rgba(29, 185, 84, 0);
+    }
 }
 
 .sab-drop-settled {
-  animation: sabDropPulse 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+    animation: sabDropPulse 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
 }
 
-/* ========================================================================== */
-/* 3. MOBILE FULL-WIDTH ADAPTIVE ENGINE (NO HORIZONTAL DRAGGING)              */
-/*                                                                            */
-/* STRATEGY: Instead of :has() which may not work reliably, we target          */
-/* EVERY element in the rendering path with width/overflow constraints.        */
-/* We hide the left sidebar by ID and force #main-view to fill available      */
-/* width. We also aggressively hide "Continue in Spotify app" modals.          */
-/* ========================================================================== */
-
-/* --- Global: prevent any horizontal overflow from any element --- */
-html.sab-mobile-fit,
-html.sab-mobile-fit body {
-  overflow-x: hidden !important;
-  max-width: 100vw !important;
-  width: 100vw !important;
-  margin: 0 !important;
-  padding: 0 !important;
+/* ==========================================================================
+   1. FIX RIGHT-EDGE ~30PX GUTTER & HORIZONTAL OVERFLOW
+   ========================================================================== */
+html, body {
+    width: 100% !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
 }
 
-/* --- CSS custom properties: zero out sidebar widths everywhere --- */
+#main,
+.Root,
+.Root__top-container,
+.Root__main-view,
+.main-view-container,
+[data-overlayscrollbars-viewport] {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin-right: 0 !important;
+    padding-right: 0 !important;
+    box-sizing: border-box !important;
+}
+
+/* Kill left sidebar completely in mobile fit */
+html.sab-mobile-fit #Desktop_LeftSidebar_Id,
+html.sab-mobile-fit nav[aria-label="Main"],
+html.sab-mobile-fit div.LayoutResizer__resize-bar,
+html.sab-mobile-fit aside[data-testid="right-sidebar"],
+html.sab-mobile-fit .Root__right-sidebar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    visibility: hidden !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    pointer-events: none !important;
+}
+
+/* Zero out desktop sidebar CSS variables */
 html.sab-mobile-fit,
 html.sab-mobile-fit *,
 html.sab-mobile-fit :root {
-  --left-sidebar-width: 0px !important;
-  --panel-width: 0px !important;
-  --right-sidebar-width: 0px !important;
-  --panel-gap: 0px !important;
-  --content-spacing: 0px !important;
-  --left-sidebar-and-gap-width: 0px !important;
+    --left-sidebar-width: 0px !important;
+    --panel-width: 0px !important;
+    --right-sidebar-width: 0px !important;
+    --panel-gap: 0px !important;
+    --content-spacing: 0px !important;
+    --left-sidebar-and-gap-width: 0px !important;
 }
 
-/* --- #main container: fill viewport --- */
-html.sab-mobile-fit #main {
-  width: 100vw !important;
-  max-width: 100vw !important;
-  min-width: 0 !important;
-  overflow-x: hidden !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-/* --- .Root wrapper: fill viewport --- */
-html.sab-mobile-fit .Root {
-  width: 100vw !important;
-  max-width: 100vw !important;
-  min-width: 0 !important;
-  overflow-x: hidden !important;
-}
-
-/* --- The grid container (child of .Root): force single column --- */
-/* Target by class .Root > first div child which IS the grid container */
-html.sab-mobile-fit .Root > div {
-  display: grid !important;
-  grid-template-areas:
-    "global-nav"
-    "main-view"
-    "now-playing-bar" !important;
-  grid-template-columns: 100vw !important;
-  grid-template-rows: auto 1fr auto !important;
-  width: 100vw !important;
-  max-width: 100vw !important;
-  min-width: 0 !important;
-  overflow-x: hidden !important;
-  padding: 0 !important;
-  margin: 0 !important;
-}
-
-/* --- Also target with :has() as a bonus for browsers that support it --- */
+/* Target the grid container: force single-column */
+html.sab-mobile-fit .Root > div,
 html.sab-mobile-fit div:has(> #main-view) {
-  display: grid !important;
-  grid-template-areas:
-    "global-nav"
-    "main-view"
-    "now-playing-bar" !important;
-  grid-template-columns: 100vw !important;
-  grid-template-rows: auto 1fr auto !important;
-  width: 100vw !important;
-  max-width: 100vw !important;
-  min-width: 0 !important;
-  overflow-x: hidden !important;
+    display: grid !important;
+    grid-template-areas:
+        "global-nav"
+        "main-view"
+        "now-playing-bar" !important;
+    grid-template-columns: 100% !important;
+    grid-template-rows: auto 1fr auto !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
+    padding: 0 !important;
+    margin: 0 !important;
 }
 
-/* --- Kill left sidebar completely --- */
-html.sab-mobile-fit #Desktop_LeftSidebar_Id {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  min-width: 0 !important;
-  max-width: 0 !important;
-  visibility: hidden !important;
-  overflow: hidden !important;
-  position: absolute !important;
-  pointer-events: none !important;
+/* Prevent desktop CSS grid from overflowing mobile width */
+.Root__top-container {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0 !important;
+    padding: 0 !important;
 }
 
-/* Also hide resize bars and nav sidebar elements */
-html.sab-mobile-fit nav[aria-label="Main"],
-html.sab-mobile-fit div.LayoutResizer__resize-bar {
-  display: none !important;
-  width: 0 !important;
-  min-width: 0 !important;
+#main-view {
+    grid-area: main-view !important;
+    grid-column: 1 / -1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
 }
 
-/* --- Kill right sidebar --- */
-html.sab-mobile-fit div[style*="right-sidebar"],
-html.sab-mobile-fit .Root__right-sidebar,
-html.sab-mobile-fit aside[data-testid="right-sidebar"] {
-  display: none !important;
-  width: 0 !important;
-  visibility: hidden !important;
-  position: absolute !important;
+main {
+    width: 100% !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
 }
 
-/* --- Kill top banner row --- */
-html.sab-mobile-fit div[class*="top-banner"],
-html.sab-mobile-fit [data-testid="top-bar-banner"] {
-  display: none !important;
-  height: 0 !important;
+/* ==========================================================================
+   2. FIX TOP HEADER & "LOG IN" BUTTON CLIPPING
+   ========================================================================== */
+header,
+[data-testid="top-bar"],
+[data-testid="global-nav-bar"],
+#global-nav-bar {
+    width: 100% !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    padding: 8px 12px !important;
+    padding-top: max(8px, env(safe-area-inset-top, 8px)) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    overflow: visible !important;
 }
 
-/* --- Main view: fill full width --- */
-html.sab-mobile-fit #main-view {
-  grid-area: main-view !important;
-  grid-column: 1 / -1 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  width: 100vw !important;
-  max-width: 100vw !important;
-  min-width: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  box-sizing: border-box !important;
-  flex: 1 1 auto !important;
-  overflow-x: hidden !important;
-  min-height: 0 !important;
+/* Allow the middle search bar container to shrink so "Log in" isn't pushed off-screen */
+[data-testid="global-nav-bar"] > div,
+header > div {
+    min-width: 0 !important;
+    flex-shrink: 1 !important;
 }
 
-html.sab-mobile-fit .main-view-container,
-html.sab-mobile-fit .main-view-container__scroll-node {
-  width: 100% !important;
-  max-width: 100vw !important;
-  min-width: 0 !important;
-  overflow-x: hidden !important;
+/* Keep "Log in" button fully visible and uncut on the top-right edge */
+[data-testid="login-button"] {
+    flex-shrink: 0 !important;
+    margin-right: 6px !important;
+    white-space: nowrap !important;
 }
 
-html.sab-mobile-fit main {
-  width: 100% !important;
-  max-width: 100vw !important;
-  min-width: 0 !important;
-  padding: 0 8px 110px 8px !important;
-  box-sizing: border-box !important;
-  overflow-x: hidden !important;
+/* Hide unnecessary "Sign up" / "Install App" buttons in tight mobile header */
+[data-testid="signup-button"],
+a[href*="/download"] {
+    display: none !important;
 }
 
-/* --- Global nav bar: full width --- */
-html.sab-mobile-fit #global-nav-bar {
-  grid-area: global-nav !important;
-  grid-column: 1 / -1 !important;
-  display: flex !important;
-  width: 100% !important;
-  max-width: 100vw !important;
-  box-sizing: border-box !important;
-  overflow-x: hidden !important;
+/* ==========================================================================
+   3. FIX INNER FOOTER COVERING SONGS vs. BOTTOM PLAYER BAR
+   ========================================================================== */
+/* Reset inner page footers ("About", "Useful links", etc.) so they never cover content */
+main footer,
+.main-view-container footer,
+[data-testid="footer-div"],
+footer.encore-dark-theme:not(:has([data-testid="now-playing-bar"])) {
+    position: static !important;
+    z-index: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    background: transparent !important;
+    pointer-events: auto !important;
 }
 
-/* --- Now-playing bar: sticky bottom --- */
-html.sab-mobile-fit footer,
-html.sab-mobile-fit [data-testid="now-playing-bar"],
-html.sab-mobile-fit [data-testid="now-playing-widget"] {
-  grid-area: now-playing-bar !important;
-  grid-column: 1 / -1 !important;
-  position: fixed !important;
-  bottom: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  width: 100vw !important;
-  max-width: 100vw !important;
-  box-sizing: border-box !important;
-  padding: 6px 8px !important;
-  overflow: hidden !important;
-  background-color: #121212 !important;
-  z-index: 9999 !important;
+/* Scope fixed positioning strictly to the actual bottom Now Playing bar */
+[data-testid="now-playing-bar"],
+aside[aria-label*="Now playing"],
+footer:has([data-testid="now-playing-bar"]) {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    z-index: 9999 !important;
+    box-sizing: border-box !important;
 }
 
-/* --- Inner scroll viewports --- */
-html.sab-mobile-fit [data-overlayscrollbars-viewport],
-html.sab-mobile-fit [data-viewport],
-html.sab-mobile-fit div[class*="os-viewport"] {
-  max-width: 100vw !important;
-  width: 100% !important;
-  overflow-x: hidden !important;
+/* Add bottom padding to main scroll view so the bottom player doesn't cover the last row of songs */
+.main-view-container__scroll-node-child {
+    padding-bottom: 100px !important;
 }
 
-/* --- Track rows --- */
-html.sab-mobile-fit [data-testid="tracklist-row"] {
-  max-width: 100vw !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-  padding-left: 28px !important;
-  padding-right: 6px !important;
-}
-
-/* --- Hide desktop-only columns --- */
-html.sab-mobile-fit [data-testid="tracklist-row"] > div[aria-colindex="3"],
-html.sab-mobile-fit [data-testid="tracklist-row"] > div[aria-colindex="4"],
-html.sab-mobile-fit div[role="columnheader"]:nth-child(3),
-html.sab-mobile-fit div[role="columnheader"]:nth-child(4) {
-  display: none !important;
-}
-
-/* --- Hide desktop volume, connect, lyrics, miniplayer buttons --- */
-html.sab-mobile-fit [data-testid="volume-bar"],
-html.sab-mobile-fit button[aria-label*="Connect to a device" i],
-html.sab-mobile-fit button[aria-label*="Lyrics" i],
-html.sab-mobile-fit button[aria-label*="Miniplayer" i] {
-  display: none !important;
-}
-
-/* --- Card grid: 2 columns on mobile --- */
-html.sab-mobile-fit div[data-testid="grid-container"] {
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  gap: 10px !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-}
-
-/* ========================================================================== */
-/* 4. AGGRESSIVE "CONTINUE IN SPOTIFY APP" / UPSELL MODAL NUKING              */
-/* ========================================================================== */
-
-/* Hide any dialog/modal mentioning spotify app download */
-html.sab-mobile-fit div[role="dialog"],
-html.sab-mobile-fit div[aria-modal="true"],
-html.sab-mobile-fit div[data-testid="modal-container"],
-html.sab-mobile-fit div[class*="GenericModal"],
-html.sab-mobile-fit div[class*="encore-dark-theme"][role="dialog"] {
-  /* We can't just hide all dialogs - let JS handle dismissal */
-}
-
-/* But we CAN hide the specific "continue in app" / "download app" overlay */
-html.sab-mobile-fit div[data-testid="bottom-bar"],
-html.sab-mobile-fit div[class*="BottomBar"],
-html.sab-mobile-fit a[href*="spotify.link"],
-html.sab-mobile-fit a[href*="play.google.com/store/apps/details?id=com.spotify"],
-html.sab-mobile-fit a[href*="itunes.apple.com"],
-html.sab-mobile-fit div[class*="mobileAppBanner"],
-html.sab-mobile-fit div[class*="SmartBanner"],
-html.sab-mobile-fit div[class*="app-banner"] {
-  display: none !important;
-  height: 0 !important;
-  visibility: hidden !important;
+/* ==========================================================================
+   4. HIDE "CONTINUE IN THE SPOTIFY APP" UPSELL MODALS
+   ========================================================================== */
+[data-testid="upsell-modal"],
+[data-testid="in-app-modal"],
+div[role="dialog"][aria-label*="Spotify app" i],
+.GenericModal:has(a[href*="spotify.link"]),
+.GenericModal:has(a[href*="app.adjust.com"]) {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
 }

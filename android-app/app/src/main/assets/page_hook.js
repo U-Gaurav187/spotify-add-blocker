@@ -1,8 +1,83 @@
 (() => {
   'use strict';
 
+  // Keep __sab_hook_installed marker for OtaSyncManager.kt validation
   if (window.__sab_hook_installed) return;
   window.__sab_hook_installed = true;
+
+  (function installModalAndKeyboardFixes() {
+    // 1. Trigger Android soft keyboard on input focus/tap (HyperOS / POCO F6 fix)
+    function notifyAndroidKeyboard(e) {
+      const el = e.target;
+      if (!el) return;
+      const tag = (el.tagName || '').toUpperCase();
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        el.isContentEditable ||
+        el.getAttribute?.('role') === 'searchbox'
+      ) {
+        try {
+          if (window.AndroidBridge && typeof window.AndroidBridge.showKeyboard === 'function') {
+            window.AndroidBridge.showKeyboard();
+          }
+        } catch (_) {}
+      }
+    }
+
+    window.addEventListener('touchend', notifyAndroidKeyboard, true);
+    window.addEventListener('focusin', notifyAndroidKeyboard, true);
+    window.addEventListener('click', notifyAndroidKeyboard, true);
+
+    // 2. Automatically dismiss "Continue in the Spotify app" / Upsell dialogs
+    const UPSELL_KEYWORDS = [
+      'continue in the spotify app',
+      'open in app',
+      'get the app',
+      'listen on the app',
+      'free on the spotify app'
+    ];
+
+    function dismissUpsellModals() {
+      const dialogs = document.querySelectorAll(
+        '[role="dialog"], .GenericModal, [data-testid="upsell-modal"], [data-testid="in-app-modal"]'
+      );
+
+      dialogs.forEach((dialog) => {
+        const text = (dialog.innerText || '').toLowerCase();
+        const isUpsell =
+          dialog.matches('[data-testid*="upsell"], [data-testid="in-app-modal"]') ||
+          UPSELL_KEYWORDS.some((kw) => text.includes(kw));
+
+        if (isUpsell) {
+          // First try clicking the close / "Not now" button so React cleans up modal state
+          const closeBtn = dialog.querySelector(
+            'button[aria-label*="Close" i], button[data-testid="close-button"], [aria-label*="Dismiss" i]'
+          );
+          if (closeBtn) {
+            closeBtn.click();
+          } else {
+            // Fallback: remove modal overlay container
+            const overlay = dialog.closest('.GenericModal__overlay') || dialog;
+            overlay.remove();
+          }
+        }
+      });
+    }
+
+    // Observe DOM changes to catch upsell popups the instant they mount
+    const observer = new MutationObserver(() => {
+      dismissUpsellModals();
+    });
+
+    if (document.documentElement) {
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+    } else {
+      window.addEventListener('DOMContentLoaded', () => {
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+      });
+    }
+  })();
 
   const SELECTORS = {
     trackRow: '[data-testid="tracklist-row"]',
