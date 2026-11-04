@@ -3,7 +3,9 @@ package com.spotifyadblocker.app
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -41,18 +43,17 @@ class MainActivity : AppCompatActivity() {
     private val blockedUrlPatterns = CopyOnWriteArrayList<String>()
 
     private val PREFS_NAME = "sab_spotify_prefs"
-    private val KEY_MOBILE_FIT = "mobileFitEnabled"
+    private val KEY_DESKTOP_VIEW = "desktopViewEnabled"
     private val KEY_UNLOCK_CONTROLS = "unlockControls"
     private val KEY_CUSTOM_QUEUE = "customQueueEnabled"
     private val KEY_MUTE_ADS = "muteAds"
     private val KEY_FAST_FORWARD = "fastForwardAds"
     private val KEY_HIDE_BANNERS = "hideBanners"
 
-    // Modern Desktop Windows Chrome User-Agent so Spotify provides the full Web Player
     private val DESKTOP_USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -66,13 +67,29 @@ class MainActivity : AppCompatActivity() {
         pageProgressBar = findViewById(R.id.pageProgressBar)
         fabControllerMenu = findViewById(R.id.fabControllerMenu)
 
+        // Ensure touch focus for soft keyboard (fixes Xiaomi / MIUI / HyperOS IME issue)
+        webView.isFocusable = true
+        webView.isFocusableInTouchMode = true
+        webView.requestFocus(View.FOCUS_DOWN)
+
+        webView.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP -> {
+                    if (!v.hasFocus()) {
+                        v.requestFocusFromTouch()
+                    }
+                }
+            }
+            false
+        }
+
         // Start background media foreground service to prevent audio suspension
         MediaPlaybackService.start(this)
 
         // Load active declarative network rules into memory
         reloadNetworkRules()
 
-        // Configure WebView settings (disable wide viewport zoom to fit phone width)
+        // Configure WebView settings (Mobile-first by default to eliminate horizontal dragging)
         configureWebSettings()
 
         // Set up document_start JavaScript injection
@@ -108,18 +125,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun configureWebSettings() {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val desktopView = prefs.getBoolean(KEY_DESKTOP_VIEW, false)
+
         val settings = webView.settings
-        settings.userAgentString = DESKTOP_USER_AGENT
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.databaseEnabled = true
         settings.mediaPlaybackRequiresUserGesture = false
 
-        // Match mobile screen dimensions instead of zooming out like a desktop monitor
-        settings.useWideViewPort = false
-        settings.loadWithOverviewMode = false
-        settings.textZoom = 100
+        if (desktopView) {
+            settings.userAgentString = DESKTOP_USER_AGENT
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
+        } else {
+            // Native mobile view: fits phone screen naturally without horizontal dragging
+            settings.userAgentString = null
+            settings.useWideViewPort = false
+            settings.loadWithOverviewMode = false
+        }
 
+        settings.textZoom = 100
         settings.cacheMode = WebSettings.LOAD_DEFAULT
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
     }
@@ -160,7 +186,6 @@ class MainActivity : AppCompatActivity() {
                 val condition = rule.optJSONObject("condition") ?: continue
                 val urlFilter = condition.optString("urlFilter", "")
                 if (urlFilter.isNotEmpty()) {
-                    // Normalize standard Adblock syntax: '||doubleclick.net^' -> 'doubleclick.net'
                     val cleaned = urlFilter.replace("||", "").replace("^", "").trim()
                     if (cleaned.isNotEmpty()) {
                         blockedUrlPatterns.add(cleaned)
@@ -171,7 +196,6 @@ class MainActivity : AppCompatActivity() {
             e.printStackTrace()
         }
 
-        // Foundational telemetry/ad tracking endpoints
         val fallbackDomains = listOf(
             "doubleclick.net",
             "googlesyndication.com",
@@ -191,7 +215,6 @@ class MainActivity : AppCompatActivity() {
         webView.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {
                 val requestedResources = request.resources
-                // Grant Widevine DRM Protected Media Identifier permission for Spotify audio playback
                 if (requestedResources.contains(PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID)) {
                     request.grant(arrayOf(PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID))
                 } else {
@@ -218,7 +241,6 @@ class MainActivity : AppCompatActivity() {
             ): WebResourceResponse? {
                 val url = request?.url?.toString() ?: return null
 
-                // Check request against blocked patterns
                 for (pattern in blockedUrlPatterns) {
                     if (url.contains(pattern, ignoreCase = true)) {
                         val responseHeaders = mutableMapOf(
@@ -261,7 +283,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun injectCustomStylesAndClasses() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val mobileFit = prefs.getBoolean(KEY_MOBILE_FIT, true)
+        val desktopView = prefs.getBoolean(KEY_DESKTOP_VIEW, false)
 
         val css = otaSyncManager.getFileContent(
             OtaSyncManager.OTA_STYLES,
@@ -272,16 +294,7 @@ class MainActivity : AppCompatActivity() {
         val js = """
             (function() {
                 try {
-                    // 1. Enforce responsive mobile viewport meta
-                    var meta = document.querySelector('meta[name="viewport"]');
-                    if (!meta) {
-                        meta = document.createElement('meta');
-                        meta.name = 'viewport';
-                        document.head.appendChild(meta);
-                    }
-                    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-
-                    // 2. Inject responsive & ad blocking CSS
+                    // Inject responsive & ad blocking CSS
                     var styleEl = document.getElementById('sab-injected-css');
                     if (!styleEl) {
                         styleEl = document.createElement('style');
@@ -290,9 +303,8 @@ class MainActivity : AppCompatActivity() {
                     }
                     styleEl.textContent = $escapedCss;
 
-                    // 3. Apply class states
                     document.documentElement.classList.add('sab-hide-banners', 'sab-unlock-controls');
-                    if ($mobileFit) {
+                    if (!$desktopView) {
                         document.documentElement.classList.add('sab-mobile-fit');
                     } else {
                         document.documentElement.classList.remove('sab-mobile-fit');
@@ -379,7 +391,8 @@ class MainActivity : AppCompatActivity() {
         val swBanners = view.findViewById<SwitchMaterial>(R.id.switchHideBanners)
 
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        swMobileFit.isChecked = prefs.getBoolean(KEY_MOBILE_FIT, true)
+        val desktopView = prefs.getBoolean(KEY_DESKTOP_VIEW, false)
+        swMobileFit.isChecked = !desktopView
         swUnlock.isChecked = prefs.getBoolean(KEY_UNLOCK_CONTROLS, true)
         swQueue.isChecked = prefs.getBoolean(KEY_CUSTOM_QUEUE, true)
         swMute.isChecked = prefs.getBoolean(KEY_MUTE_ADS, true)
@@ -396,16 +409,25 @@ class MainActivity : AppCompatActivity() {
         }
 
         fun saveAndSync() {
+            val wasDesktop = prefs.getBoolean(KEY_DESKTOP_VIEW, false)
+            val nowDesktop = !swMobileFit.isChecked
+
             prefs.edit()
-                .putBoolean(KEY_MOBILE_FIT, swMobileFit.isChecked)
+                .putBoolean(KEY_DESKTOP_VIEW, nowDesktop)
                 .putBoolean(KEY_UNLOCK_CONTROLS, swUnlock.isChecked)
                 .putBoolean(KEY_CUSTOM_QUEUE, swQueue.isChecked)
                 .putBoolean(KEY_MUTE_ADS, swMute.isChecked)
                 .putBoolean(KEY_FAST_FORWARD, swFast.isChecked)
                 .putBoolean(KEY_HIDE_BANNERS, swBanners.isChecked)
                 .apply()
-            injectCustomStylesAndClasses()
-            syncConfigToWebView()
+
+            if (wasDesktop != nowDesktop) {
+                configureWebSettings()
+                webView.reload()
+            } else {
+                injectCustomStylesAndClasses()
+                syncConfigToWebView()
+            }
         }
 
         swMobileFit.setOnCheckedChangeListener { _, _ -> saveAndSync() }
