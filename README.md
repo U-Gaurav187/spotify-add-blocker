@@ -1,135 +1,167 @@
-# Ad Silencer & Queue Controller for Spotify™ 🎵
+# Spotify Web Controller & Ad Silencer 🎵📱
 
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-success?style=flat-square)](https://developer.chrome.com/docs/extensions/mv3/intro/)
-[![Browser Support](https://img.shields.io/badge/Browsers-Chrome%20|%20Edge%20|%20Brave%20|%20Firefox-blue?style=flat-square)](#-installation)
+[![Android App](https://img.shields.io/badge/Android-APK%20Ready-brightgreen?style=flat-square)](#-android-application--ota-sync)
+[![OTA Remote Sync](https://img.shields.io/badge/GitHub-OTA%20Sync-blueviolet?style=flat-square)](#-automatic-github-ota-remote-sync-engine)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 [![Privacy](https://img.shields.io/badge/Privacy-100%25%20Local-brightgreen?style=flat-square)](PRIVACY_POLICY.md)
 
-A lightweight, high-performance browser extension that upgrades the Spotify Web Player with **smooth 60fps drag-and-drop queue reordering**, **intelligent audio ad silencing/fast-forwarding**, **unlocked seek scrubbing**, and **banner ad removal** — without requiring Spotify Premium.
+A production-grade, zero-cost audio enhancement suite for the **Spotify Web Player** (`open.spotify.com`), available both as a **Cross-Browser WebExtension** and as a **Self-Updating Android WebView Application (`/android-app`)** with an automatic **Over-The-Air (OTA) GitHub Sync Engine**.
 
 ---
 
-## ✨ Features
+## ✨ Features at a Glance
 
-- 🔀 **Native Queue Drag-and-Drop (`=`)**:
-  - Adds a sleek two-horizontal-line drag handle directly beside each song in Spotify's native **"Next in queue"** panel.
-  - **60fps FLIP physics animation**: Sibling cards glide smoothly into place as you drag.
-  - **Live cursor tracking & lift**: Lifted cards cast a subtle glowing shadow and follow your cursor in real time.
-- 🔇 **Smart Audio Ad Silencing**:
-  - Automatically detects audio advertisements and mutes playback volume instantly until regular music resumes.
-- ⏩ **Ad Fast-Forwarding**:
-  - Automatically speeds up and skips advertisement streams where possible.
-- 🔓 **Native Transport Controls**:
-  - Unlocks the native seek-bar scrubbing, previous/next track buttons, and shuffle/repeat on the web player.
-- 🧹 **Visual Banner Ad Removal**:
-  - Hides intrusive leaderboard and sidebar banner containers seamlessly via clean CSS.
-- 🔒 **100% Client-Side & Private**:
-  - Zero data collection, no telemetry, and no tracking cookies. All settings and stats stay on your device.
+| Feature | Browser Extension | Android App (`/android-app`) |
+| :--- | :---: | :---: |
+| 🔀 **60fps Native Queue Drag (`=`)** | ✅ Mouse & Touch | ✅ 60fps Mobile Touch Drag |
+| 🔇 **Smart Audio Ad Silencing** | ✅ Instant Auto-Mute | ✅ Instant Auto-Mute |
+| ⏩ **Ad Fast-Forwarding** | ✅ Up to 16x Skip | ✅ Up to 16x Skip |
+| 🔓 **Unlocked Transport & Seek Bar** | ✅ Unlimited Skips | ✅ Unlimited Skips |
+| 🧹 **Banner Ad Removal** | ✅ DeclarativeNetRequest | ✅ Network Interception |
+| 🔄 **Automatic GitHub OTA Sync** | ✅ Remote Config | ✅ Full Script Hot-Reloading |
+| 🌙 **Screen-Off Background Playback** | — | ✅ Foreground Media Service |
+| 🔒 **100% Client-Side Privacy** | ✅ Zero Telemetry | ✅ Zero Telemetry |
 
 ---
 
-## 🚀 Free Installation (No Extension Store Needed)
+## 📱 Android Application & OTA Sync
 
-You can install and use this extension in under 60 seconds without paying any store fees:
+The `/android-app` directory contains a standalone Android project (Kotlin, AndroidX WebKit, Min SDK 26, Target SDK 35) designed to run Spotify Web in Desktop mode with background playback and live GitHub updates.
+
+### 📥 How to Install the APK
+
+1. Go to the [**Releases**](https://github.com/U-Gaurav187/spotify-add-blocker/releases) page (or the [**Actions**](https://github.com/U-Gaurav187/spotify-add-blocker/actions) tab for the latest build artifact).
+2. Download `app-debug.apk` directly to your Android device.
+3. Tap the file to install (if prompted, allow *"Install unknown apps"* for your browser or file manager).
+4. Launch **Spotify Controller** and log in to your Spotify account.
+
+### 🌟 Android Specific Capabilities
+- **Screen-Off & Background Playback**: Uses an Android `ForegroundService` with a partial `WakeLock` and an `AudioWebView` that overrides window visibility changes so audio continues playing seamlessly when you switch apps or lock your phone.
+- **Widevine DRM Auto-Grant**: WebChromeClient automatically grants `RESOURCE_PROTECTED_MEDIA_ID` so DRM-encrypted audio streams play without silent decoder errors.
+- **Floating Controller Menu**: Tap the floating green button at the bottom-right of the screen to toggle features or tap **"Sync Updates from GitHub"**.
+
+---
+
+## ⚡ Automatic GitHub OTA Remote Sync Engine
+
+You never have to rebuild or reinstall the APK when you update your extension scripts!
+
+```
+ ┌─────────────────────────────────────────────────────────┐
+ │               Your GitHub Repository                   │
+ │       (U-Gaurav187/spotify-add-blocker: main)           │
+ │                                                         │
+ │   • page_hook.js     • styles.css                       │
+ │   • rules.json       • remote-config.json               │
+ └────────────────────────────┬────────────────────────────┘
+                              │ git push
+                              ▼
+ ┌─────────────────────────────────────────────────────────┐
+ │        Android App: OtaSyncManager.kt (Background)       │
+ │                                                         │
+ │   1. Fetches raw files with ?t=${timestamp} (no-cache)  │
+ │   2. Fallback check: main branch ➔ master branch        │
+ │   3. Integrity Verification (markers & JSON validation) │
+ │   4. SHA-256 Hash comparison against local filesDir     │
+ └────────────────────────────┬────────────────────────────┘
+                              │ If changed
+                              ▼
+ ┌─────────────────────────────────────────────────────────┐
+ │        Hot-Swap & WebView Reload (Zero APK Rebuild)      │
+ │                                                         │
+ │   • Removes old ScriptHandler                           │
+ │   • Injects updated page_hook.js at document_start      │
+ │   • Reloads WebView with Toast notification             │
+ └─────────────────────────────────────────────────────────┘
+```
+
+1. **Push your code to GitHub**: Push any changes to `page_hook.js`, `styles.css`, `rules.json`, or `remote-config.json` on `main`.
+2. **Automatic Background Sync**: On app launch (or when tapping *"Sync Updates from GitHub"* in the floating menu), `OtaSyncManager` downloads the latest files from GitHub Raw.
+3. **Integrity Validation**: Before saving, the app validates file signatures (`__sab_hook_installed`, `sab-hide-banners`, valid JSON). Corrupted or 404 responses are automatically rejected.
+4. **Hot Reload**: If a file hash changed, the app saves it to local app storage, replaces the `document_start` injection, and reloads the web player with a Toast notification: *"Updated from GitHub! Reloading..."*.
+
+---
+
+## 💻 Browser Extension Installation (Desktop)
 
 ### Chrome, Edge, Brave, Opera & Vivaldi
-
-1. **Download the Code**:
-   - Click the green **Code** button at the top of this repository and select **Download ZIP** (or clone the repo):
-     ```bash
-     git clone https://github.com/U-Gaurav187/spotify-add-blocker.git
-     ```
-   - Extract the downloaded `.zip` file into a folder on your computer.
-
-2. **Open Extensions Manager**:
-   - In **Google Chrome**: navigate to `chrome://extensions`
-   - In **Microsoft Edge**: navigate to `edge://extensions`
-   - In **Brave**: navigate to `brave://extensions`
-
-3. **Enable Developer Mode**:
-   - Toggle the **Developer mode** switch in the top-right corner of the extensions page.
-
-4. **Load Unpacked**:
-   - Click the **"Load unpacked"** button in the top-left corner.
-   - Select the folder containing this project (the folder where `manifest.json` is located).
-
-5. **Start Listening**:
-   - Open [open.spotify.com](https://open.spotify.com) and pin the extension icon in your browser toolbar!
-
----
+1. Download or clone this repository:
+   ```bash
+   git clone https://github.com/U-Gaurav187/spotify-add-blocker.git
+   ```
+2. Navigate to your browser's extension manager:
+   - Chrome: `chrome://extensions`
+   - Edge: `edge://extensions`
+   - Brave: `brave://extensions`
+3. Turn **ON** the **Developer mode** toggle in the top-right corner.
+4. Click **"Load unpacked"** and select the root folder of this repository.
+5. Open [open.spotify.com](https://open.spotify.com).
 
 ### Mozilla Firefox
-
 1. Open Firefox and navigate to `about:debugging#/runtime/this-firefox`.
-2. Click **"Load Temporary Add-on..."**.
-3. Select the `manifest.json` file inside the cloned/downloaded folder.
-4. Open [open.spotify.com](https://open.spotify.com).
+2. Click **"Load Temporary Add-on..."** and select `manifest.json`.
 
 ---
 
-## 🛠️ Architecture & Under the Hood
+## 🏗️ Building the Android App Locally
 
-The extension is engineered to run seamlessly alongside Spotify's dynamic React/Redux single-page application:
+If you wish to compile the Android app locally using Gradle:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Browser Window                         │
-│                                                             │
-│   ┌─────────────────────────────────────────────────────┐   │
-│   │               Spotify Web Player                    │   │
-│   │                                                     │   │
-│   │   ┌─────────────────────────────────────────────┐   │   │
-│   │   │   page_hook.js (MAIN World)                 │   │   │
-│   │   │   • FLIP Queue Reordering Engine            │   │   │
-│   │   │   • Media Element & Audio Hooks             │   │   │
-│   │   │   • Fail-Open Mutation Circuit Breakers     │   │   │
-│   │   └──────────────────────▲──────────────────────┘   │   │
-│   │                          │ CustomEvents             │   │
-│   │                          │ (JSON-serialized)        │   │
-│   │   ┌──────────────────────▼──────────────────────┐   │   │
-│   │   │   content.js (ISOLATED World)               │   │   │
-│   │   │   • Extension Storage Bridge                │   │   │
-│   │   │   • Declarative Net Request Sync            │   │   │
-│   │   └─────────────────────────────────────────────┘   │   │
-│   │   ┌─────────────────────────────────────────────┐   │   │
-│   │   │   styles.css                                │   │   │
-│   │   │   • Hardware-accelerated transforms         │   │   │
-│   │   │   • Drop settle keyframes & ad slot hiding  │   │   │
-│   │   └─────────────────────────────────────────────┘   │   │
-│   └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+```bash
+cd android-app
+
+# On Windows:
+gradlew.bat assembleDebug
+
+# On Linux / macOS:
+chmod +x gradlew
+./gradlew assembleDebug
 ```
 
-- **Fail-Open Design**: Wrapped native functions (`fetch`, `HTMLMediaElement`) catch errors silently, guaranteeing that Spotify updates will never crash the player.
-- **Circuit Breaker**: An internal mutation governor prevents infinite loops during heavy React re-renders.
-- **Cross-World Safety**: Configuration and event payloads are JSON-serialized across execution worlds to prevent permission errors in Firefox Xray Vision and Chromium V8 context boundaries.
+The compiled APK will be generated at:
+`android-app/app/build/outputs/apk/debug/app-debug.apk`
 
 ---
 
 ## 📁 Repository Structure
 
 ```
-├── icons/               # 16x16, 48x48, and 128x128 extension icons
-├── content.js           # Isolated world script & storage bridge
-├── manifest.json        # Manifest V3 extension configuration
-├── page_hook.js         # Main world script (FLIP physics queue & audio hooks)
-├── popup.html           # Settings popup user interface
-├── popup.css            # Spotify-themed dark mode popup styles
-├── popup.js             # User preferences management & counters
-├── rules.json           # DeclarativeNetRequest ad and telemetry block rules
-├── styles.css           # 60fps animations, drag states & ad cleanup styles
-├── PRIVACY_POLICY.md    # Transparent, 100% local privacy disclosure
-└── README.md            # Documentation and installation guide
+├── .github/workflows/
+│   └── build-android.yml    # Automated GitHub Actions APK builder & release workflow
+├── android-app/             # Complete Android Studio / Gradle project
+│   ├── app/
+│   │   ├── build.gradle.kts # Android module build file with asset copy task
+│   │   └── src/main/
+│   │       ├── AndroidManifest.xml
+│   │       ├── assets/      # Pre-bundled offline fallback scripts
+│   │       ├── java/com/spotifyadblocker/app/
+│   │       │   ├── AudioWebView.kt        # Custom WebView with continuous playback
+│   │       │   ├── MainActivity.kt        # Desktop UA, DRM grant, rule interceptor
+│   │       │   ├── MediaPlaybackService.kt# Foreground service with WakeLock
+│   │       │   └── OtaSyncManager.kt      # GitHub Raw cache-busting sync engine
+│   │       └── res/         # Layouts, themes, drawables & dialogs
+│   ├── build.gradle.kts     # Root build file
+│   └── settings.gradle.kts  # Gradle settings
+├── content.js               # Isolated world WebExtension script
+├── manifest.json            # Manifest V3 extension configuration
+├── page_hook.js             # Main world script (FLIP queue, OTA sync & audio hooks)
+├── popup.html / popup.js    # Browser extension popup UI
+├── remote-config.json       # Dynamic remote selectors & custom CSS overrides
+├── rules.json               # DeclarativeNetRequest ad & telemetry blocking rules
+├── styles.css               # 60fps animations, mobile styles & ad element removal
+├── PRIVACY_POLICY.md        # 100% local, zero-tracking privacy policy
+└── README.md                # Comprehensive documentation
 ```
 
 ---
 
-## 🔒 Privacy
+## 🔒 Privacy & Security
 
-This extension does not collect, log, or transmit any user data. All configuration states and statistics are stored exclusively in your local browser storage via `chrome.storage.local`. For full details, see [PRIVACY_POLICY.md](PRIVACY_POLICY.md).
+This project contains zero analytics, tracking beacons, or third-party telemetry. All user settings, queue sequences, and cached scripts remain strictly on your local device. Read our [PRIVACY_POLICY.md](PRIVACY_POLICY.md) for details.
 
 ---
 
 ## ⚖️ Disclaimer
 
-Spotify is a registered trademark of Spotify AB. This extension is an independent, open-source educational project and is not affiliated with, sponsored by, or endorsed by Spotify AB.
+Spotify is a registered trademark of Spotify AB. This project is an independent open-source educational utility and is not affiliated with, sponsored by, or endorsed by Spotify AB.

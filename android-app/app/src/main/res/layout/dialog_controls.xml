@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_bottom_sheet"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_music" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:text="Spotify Controller"
+            android:textColor="@color/spotify_white"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvOtaVersion"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#221DB954"
+            android:paddingStart="8dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="3dp"
+            android:text="v3.1.0 OTA"
+            android:textColor="@color/spotify_green"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvOtaStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="Using local bundled scripts"
+        android:textColor="@color/spotify_subtext"
+        android:textSize="12sp" />
+
+    <!-- GitHub Sync Button -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSyncGithub"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:backgroundTint="@color/spotify_green"
+        android:text="Sync Updates from GitHub"
+        android:textAllCaps="false"
+        android:textColor="@color/spotify_black"
+        android:textStyle="bold"
+        app:cornerRadius="24dp"
+        app:icon="@drawable/ic_sync"
+        app:iconTint="@color/spotify_black" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="12dp"
+        android:background="@color/spotify_border" />
+
+    <!-- Feature Toggles -->
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchUnlockControls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:checked="true"
+        android:text="Unlock Transport &amp; Seek Bar"
+        android:textColor="@color/spotify_white"
+        app:useMaterialThemeColors="true" />
+
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchCustomQueue"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:checked="true"
+        android:text="Queue Drag (=) &amp; On-Demand"
+        android:textColor="@color/spotify_white"
+        app:useMaterialThemeColors="true" />
+
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchMuteAds"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:checked="true"
+        android:text="Auto-Mute Audio Ads"
+        android:textColor="@color/spotify_white"
+        app:useMaterialThemeColors="true" />
+
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchFastForward"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:checked="true"
+        android:text="Fast-Forward Audio Ads"
+        android:textColor="@color/spotify_white"
+        app:useMaterialThemeColors="true" />
+
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchHideBanners"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:checked="true"
+        android:text="Hide Banner Ads"
+        android:textColor="@color/spotify_white"
+        app:useMaterialThemeColors="true" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:gravity="end"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnReloadPage"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Reload Player"
+            android:textAllCaps="false"
+            android:textColor="@color/spotify_green" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCloseDialog"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="Close"
+            android:textAllCaps="false"
+            android:textColor="@color/spotify_gray" />
+    </LinearLayout>
+
+</LinearLayout>

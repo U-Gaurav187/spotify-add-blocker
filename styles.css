@@ -59,12 +59,13 @@ html.sab-unlock-controls [data-testid="progress-bar"] {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  width: 22px !important;
-  height: 28px !important;
+  width: 24px !important;
+  height: 30px !important;
   color: #b3b3b3 !important;
   cursor: grab !important;
   border-radius: 5px !important;
   user-select: none !important;
+  touch-action: none !important;
   z-index: 30 !important;
   transition: color 0.16s ease, background-color 0.16s ease, transform 0.16s ease !important;
 }
@@ -112,4 +113,45 @@ html.sab-unlock-controls [data-testid="progress-bar"] {
 
 .sab-drop-settled {
   animation: sabDropPulse 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+}
+
+/* Mobile Responsive Optimizations for Desktop UA on Phones (WebView / Mobile) */
+@media (max-width: 768px) {
+  /* Generous touch target for queue drag handles on touchscreens */
+  .sab-native-queue-drag {
+    width: 28px !important;
+    height: 38px !important;
+    left: 1px !important;
+    touch-action: none !important;
+  }
+
+  /* Prevent horizontal scrolling & clipping on narrow mobile viewports */
+  html, body {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+    width: 100% !important;
+  }
+
+  /* Keep bottom player controls responsive on vertical mobile screens */
+  footer[data-testid="now-playing-bar"],
+  [data-testid="now-playing-widget"] {
+    max-width: 100vw !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Prevent Queue sidebar from horizontally breaking out of the viewport */
+  div[data-testid="queue-tab"],
+  aside[aria-label*="Queue" i],
+  section[data-testid="queue-page"] {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Toast position slightly higher on mobile to clear bottom nav / Android gestures */
+  #sab-status-toast {
+    bottom: 115px;
+  }
 }

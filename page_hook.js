@@ -36,6 +36,70 @@
     adTitle: '[data-testid="context-item-info-ad-title"], [data-testid="ad-info-title"]'
   };
 
+  // ============================================================================
+  // OVER-THE-AIR (OTA) REMOTE CONFIGURATION SYNC
+  // ============================================================================
+  function applyRemoteConfig(remote) {
+    if (!remote || typeof remote !== 'object') return;
+    if (remote.selectors && typeof remote.selectors === 'object') {
+      Object.assign(SELECTORS, remote.selectors);
+    }
+    if (Array.isArray(remote.restrictionKeys) && remote.restrictionKeys.length > 0) {
+      RESTRICTION_KEYS = remote.restrictionKeys;
+    }
+    if (typeof remote.extraCss === 'string' && remote.extraCss.trim()) {
+      let styleEl = document.getElementById('sab-remote-css');
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = 'sab-remote-css';
+        (document.head || document.documentElement).appendChild(styleEl);
+      }
+      styleEl.textContent = remote.extraCss;
+    }
+  }
+
+  try {
+    const rawCached = localStorage.getItem('sab_remote_config_v1');
+    if (rawCached) {
+      applyRemoteConfig(JSON.parse(rawCached));
+    }
+  } catch (err) {
+    console.debug('[SpotifyAdBlocker] Synchronous local remote config read bypassed:', err);
+  }
+
+  async function syncRemoteConfig() {
+    const primaryUrl = 'https://raw.githubusercontent.com/U-Gaurav187/spotify-add-blocker/main/remote-config.json';
+    const fallbackUrl = 'https://raw.githubusercontent.com/U-Gaurav187/spotify-add-blocker/master/remote-config.json';
+
+    async function fetchConfig(url) {
+      const res = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    }
+
+    try {
+      let data = null;
+      try {
+        data = await fetchConfig(primaryUrl);
+      } catch (ePrimary) {
+        data = await fetchConfig(fallbackUrl);
+      }
+
+      if (data && typeof data === 'object' && data.selectors) {
+        applyRemoteConfig(data);
+        localStorage.setItem('sab_remote_config_v1', JSON.stringify(data));
+      }
+    } catch (err) {
+      console.debug('[SpotifyAdBlocker] Asynchronous remote config sync bypassed:', err);
+    }
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(() => syncRemoteConfig());
+  } else {
+    setTimeout(syncRemoteConfig, 1000);
+  }
+
   const trackedMedia = new Set();
   let isAdCurrentlyPlaying = false;
   let userVolumeBeforeAd = 1;
@@ -152,7 +216,7 @@
   // ============================================================================
   // 1. STRIP PLAYBACK & QUEUE RESTRICTIONS FROM SPOTIFY STATE PAYLOADS
   // ============================================================================
-  const RESTRICTION_KEYS = [
+  let RESTRICTION_KEYS = [
     'disallow_seeking_reasons',
     'disallow_skipping_next_reasons',
     'disallow_skipping_prev_reasons',
@@ -506,16 +570,12 @@
 
       innerRow.appendChild(handle);
 
-      handle.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        e.preventDefault();
-        e.stopPropagation();
-
+      function startDragSession(clientY, isTouchEvent) {
         const container = movableRow.parentElement;
         if (!container) return;
 
         const initialRect = movableRow.getBoundingClientRect();
-        const grabOffsetWithinRow = e.clientY - initialRect.top;
+        const grabOffsetWithinRow = clientY - initialRect.top;
         let currentTranslateY = 0;
 
         innerRow.classList.remove('sab-drop-settled');
@@ -527,7 +587,7 @@
         document.body.style.userSelect = 'none';
         document.body.style.cursor = 'grabbing';
 
-        const onMouseMove = (moveEvent) => {
+        const processMove = (currentClientY) => {
           const currentInfo = getNativeQueueRowsInfo();
           if (!currentInfo) return;
 
@@ -535,17 +595,17 @@
             .map((entry) => entry.movableRow)
             .filter((el) => el.parentElement === container);
 
-          // 1. Check if cursor crossed over a non-animating sibling row
+          // 1. Check if cursor / touch crossed over a non-animating sibling row
           const targetSibling = siblings.find((sib) => {
             if (sib === movableRow || sib.dataset.sabFlipping === 'true') return false;
             const r = sib.getBoundingClientRect();
-            return moveEvent.clientY >= r.top && moveEvent.clientY <= r.bottom;
+            return currentClientY >= r.top && currentClientY <= r.bottom;
           });
 
           if (targetSibling) {
             const targetRect = targetSibling.getBoundingClientRect();
             const midY = targetRect.top + targetRect.height / 2;
-            const shouldInsertBefore = moveEvent.clientY < midY;
+            const shouldInsertBefore = currentClientY < midY;
 
             const alreadyInPosition = shouldInsertBefore
               ? movableRow.nextElementSibling === targetSibling
@@ -599,18 +659,25 @@
             }
           }
 
-          // 2. Keep the dragged card smoothly locked under the cursor
+          // 2. Keep the dragged card smoothly locked under the cursor / finger
           const layoutTop = movableRow.getBoundingClientRect().top - currentTranslateY;
-          const desiredVisualTop = moveEvent.clientY - grabOffsetWithinRow;
+          const desiredVisualTop = currentClientY - grabOffsetWithinRow;
           currentTranslateY = desiredVisualTop - layoutTop;
 
           movableRow.style.transition = 'none';
           movableRow.style.transform = `translate3d(0, ${currentTranslateY}px, 0) scale(1.02)`;
         };
 
-        const onMouseUp = () => {
-          document.removeEventListener('mousemove', onMouseMove, true);
-          document.removeEventListener('mouseup', onMouseUp, true);
+        const endDragSession = () => {
+          if (!isTouchEvent) {
+            document.removeEventListener('mousemove', onMouseMove, true);
+            document.removeEventListener('mouseup', onMouseUp, true);
+          } else {
+            document.removeEventListener('touchmove', onTouchMove, { capture: true, passive: false });
+            document.removeEventListener('touchend', onTouchEnd, true);
+            document.removeEventListener('touchcancel', onTouchEnd, true);
+          }
+
           document.body.style.userSelect = '';
           document.body.style.cursor = '';
 
@@ -643,9 +710,48 @@
           }
         };
 
-        document.addEventListener('mousemove', onMouseMove, true);
-        document.addEventListener('mouseup', onMouseUp, true);
+        const onMouseMove = (moveEvent) => {
+          processMove(moveEvent.clientY);
+        };
+
+        const onMouseUp = () => {
+          endDragSession();
+        };
+
+        const onTouchMove = (moveEvent) => {
+          if (moveEvent.cancelable) moveEvent.preventDefault();
+          if (moveEvent.touches && moveEvent.touches.length > 0) {
+            processMove(moveEvent.touches[0].clientY);
+          }
+        };
+
+        const onTouchEnd = () => {
+          endDragSession();
+        };
+
+        if (!isTouchEvent) {
+          document.addEventListener('mousemove', onMouseMove, true);
+          document.addEventListener('mouseup', onMouseUp, true);
+        } else {
+          document.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
+          document.addEventListener('touchend', onTouchEnd, true);
+          document.addEventListener('touchcancel', onTouchEnd, true);
+        }
+      }
+
+      handle.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        startDragSession(e.clientY, false);
       });
+
+      handle.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        e.preventDefault();
+        e.stopPropagation();
+        startDragSession(e.touches[0].clientY, true);
+      }, { passive: false });
     });
   }
 

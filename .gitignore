@@ -3,3 +3,15 @@ _metadata/
 Thumbs.db
 *.zip
 dist/
+
+# Android build outputs & IDE caches
+.gradle/
+build/
+android-app/.gradle/
+android-app/build/
+android-app/app/build/
+*.apk
+*.aab
+local.properties
+.idea/
+*.iml

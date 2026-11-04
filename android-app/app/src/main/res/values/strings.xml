@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Spotify Controller</string>
+    <string name="sync_button_title">Check GitHub for Updates</string>
+    <string name="playback_channel_name">Spotify Background Audio</string>
+    <string name="playback_channel_desc">Keeps web player audio active when screen is off</string>
+    <string name="playback_notification_title">Spotify Web Controller</string>
+    <string name="playback_notification_text">Background audio playback active</string>
+</resources>
