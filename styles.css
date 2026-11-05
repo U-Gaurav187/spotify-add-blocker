@@ -126,7 +126,12 @@ html.sab-unlock-controls [data-testid="progress-bar"] {
 [data-testid="upsell-modal"],
 [data-testid="in-app-modal"],
 [data-testid="bottom-bar"],
+[data-testid="generic-upsell"],
 div[role="dialog"][aria-label*="Spotify app" i],
+div[class*="c6ePp96H72tqD2qynW9h"],
+div[class*="Fv9Fzlrq7_Q2Nn3zfn42"],
+div:has(> button:has-text("Get App")),
+div:has(> div > button:has-text("Get App")),
 .GenericModal:has(a[href*="spotify.link"]),
 .GenericModal:has(a[href*="app.adjust.com"]),
 div[class*="mobileAppBanner"],
@@ -135,5 +140,148 @@ div[class*="app-banner"],
 a[href*="/download"] {
     display: none !important;
     visibility: hidden !important;
+    opacity: 0 !important;
     pointer-events: none !important;
+}
+
+/* ==========================================================================
+   NATIVE-STYLE MOBILE LIBRARY HUB
+   ========================================================================== */
+#sab-library-hub {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 112px;
+    background: #121212;
+    z-index: 998;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 24px 16px 24px 16px;
+    color: #ffffff;
+    font-family: var(--font-family, CircularSp, -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif);
+    box-sizing: border-box;
+}
+
+.sab-lib-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.sab-lib-title {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.03em;
+    color: #ffffff;
+}
+
+.sab-lib-search-box {
+    width: 100%;
+    margin-bottom: 16px;
+}
+
+.sab-lib-search-input {
+    width: 100%;
+    background: #242424;
+    border: 1px solid #3e3e3e;
+    border-radius: 20px;
+    padding: 9px 16px;
+    font-size: 14px;
+    color: #ffffff;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.15s ease;
+}
+
+.sab-lib-search-input:focus {
+    border-color: #1ed760;
+}
+
+.sab-lib-chips {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+}
+
+.sab-lib-chips::-webkit-scrollbar {
+    display: none;
+}
+
+.sab-chip {
+    background: #282828;
+    color: #ffffff;
+    border: none;
+    padding: 7px 15px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sab-chip.active {
+    background: #1ed760;
+    color: #000000;
+}
+
+.sab-lib-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 0;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background 0.12s ease;
+}
+
+.sab-lib-item:active {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.sab-lib-thumb {
+    width: 58px;
+    height: 58px;
+    border-radius: 6px;
+    background: #242424;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sab-lib-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.sab-lib-meta {
+    flex: 1;
+    min-width: 0;
+}
+
+.sab-lib-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sab-lib-sub {
+    font-size: 13px;
+    color: #b3b3b3;
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }

@@ -35,25 +35,32 @@
       'open in app',
       'get the app',
       'listen on the app',
-      'free on the spotify app'
+      'free on the spotify app',
+      'enjoy your library',
+      'see your saved'
     ];
 
     function dismissUpsellModals() {
       const dialogs = document.querySelectorAll(
-        '[role="dialog"], .GenericModal, [data-testid="upsell-modal"], [data-testid="in-app-modal"]'
+        '[role="dialog"], .GenericModal, [data-testid="upsell-modal"], [data-testid="in-app-modal"], div[class*="c6ePp96H72tqD2qynW9h"], [data-testid="generic-upsell"]'
       );
 
       dialogs.forEach((dialog) => {
         const text = (dialog.innerText || '').toLowerCase();
         const isUpsell =
-          dialog.matches('[data-testid*="upsell"], [data-testid="in-app-modal"]') ||
+          dialog.matches('[data-testid*="upsell"], [data-testid="in-app-modal"], div[class*="c6ePp96H72tqD2qynW9h"]') ||
           UPSELL_KEYWORDS.some((kw) => text.includes(kw));
 
         if (isUpsell) {
           // First try clicking the close / "Not now" button so React cleans up modal state
-          const closeBtn = dialog.querySelector(
-            'button[aria-label*="Close" i], button[data-testid="close-button"], [aria-label*="Dismiss" i]'
+          const notNowBtn = Array.from(dialog.querySelectorAll('button')).find((b) =>
+            (b.innerText || '').toLowerCase().includes('not now')
           );
+          const closeBtn =
+            notNowBtn ||
+            dialog.querySelector(
+              'button[aria-label*="Close" i], button[data-testid="close-button"], [aria-label*="Dismiss" i]'
+            );
           if (closeBtn) {
             closeBtn.click();
           } else {
@@ -77,6 +84,352 @@
         observer.observe(document.documentElement, { childList: true, subtree: true });
       });
     }
+  })();
+
+  // 3. Native Mobile Library Hub (Approach B)
+  (function installMobileLibraryHub() {
+    let isHubOpen = false;
+    let cachedItems = [];
+
+    // Seed initial library items from user's confirmed playlists & shows
+    const SEED_ITEMS = [
+      {
+        title: "Peace",
+        url: "/playlist/0lwy6SZSvibeaZCHk21gdG",
+        type: "playlist",
+        sub: "Playlist • By You"
+      },
+      {
+        title: "OIG",
+        url: "/playlist/0tgS5Bvtl6nt5GdE2RBQm4",
+        type: "playlist",
+        sub: "Playlist • By You"
+      },
+      {
+        title: "9082698549",
+        url: "/playlist/3I6hAEsbDeQKQBZsRFLB5n",
+        type: "playlist",
+        sub: "Playlist • By You"
+      },
+      {
+        title: "My All Songs",
+        url: "/playlist/0Ga8mIVhD6V9hoLl2tjBzf",
+        type: "playlist",
+        sub: "Playlist • By You"
+      },
+      {
+        title: "Loce",
+        url: "/playlist/0KBqFvVHcFvHaO0fC1CwTM",
+        type: "playlist",
+        sub: "Playlist • By You"
+      },
+      {
+        title: "tere liye mandir jauu🥺💗",
+        url: "/playlist/63WHJEnG3WnzMIJNQXmLhk",
+        type: "playlist",
+        sub: "Playlist • By You"
+      },
+      {
+        title: "Top Song Lyrics 2026",
+        url: "/playlist/37i9dQZF1CLcTo7UzL0sYK",
+        type: "playlist",
+        sub: "Playlist • Spotify"
+      },
+      {
+        title: "Horror Podcast Hindi",
+        url: "/show/1STIrhJbjN46FkzMM3fgxv",
+        type: "podcast",
+        sub: "Podcast • RJ Praveen"
+      },
+      {
+        title: "Book Insider",
+        url: "/show/2mwAzilrDXwv24Y8MpD9jT",
+        type: "podcast",
+        sub: "Podcast • Book Insider"
+      },
+      {
+        title: "Free And Full Audiobooks In Hindi",
+        url: "/show/1VdpJAK1nrmMglixKwjmAb",
+        type: "podcast",
+        sub: "Podcast • Audiobooks"
+      },
+      {
+        title: "Chanakya Niti",
+        url: "/show/1ymvFxRf8M4wChKd1LC9mW",
+        type: "podcast",
+        sub: "Podcast • Self Improvement"
+      }
+    ];
+
+    function loadSavedItems() {
+      try {
+        const stored = localStorage.getItem('sab_library_items');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const map = new Map();
+          SEED_ITEMS.forEach(i => map.set(i.url, i));
+          parsed.forEach(i => map.set(i.url, { ...map.get(i.url), ...i }));
+          cachedItems = Array.from(map.values());
+          return;
+        }
+      } catch (_) {}
+      cachedItems = [...SEED_ITEMS];
+    }
+
+    function saveDiscoveredItems() {
+      try {
+        localStorage.setItem('sab_library_items', JSON.stringify(cachedItems.slice(0, 80)));
+      } catch (_) {}
+    }
+
+    // Dynamic scanner: collect newly seen playlists and shows from Home / Search
+    function scanPageForMedia() {
+      const links = document.querySelectorAll('a[href*="/playlist/"], a[href*="/show/"]');
+      let changed = false;
+      links.forEach(l => {
+        const path = l.pathname || '';
+        if (!path || path.length < 5) return;
+        const existing = cachedItems.find(i => i.url === path);
+        const titleEl = l.querySelector('div[dir="auto"], [data-encore-id="text"]') || l;
+        const title = (titleEl.innerText || '').trim();
+        const img = l.querySelector('img');
+        const imgSrc = img ? img.src : null;
+        if (title && title.length > 1 && !title.toLowerCase().includes('spotify') && !title.toLowerCase().includes('legal')) {
+          const isShow = path.includes('/show/');
+          if (!existing) {
+            cachedItems.push({
+              title,
+              url: path,
+              type: isShow ? 'podcast' : 'playlist',
+              sub: isShow ? 'Podcast • Show' : 'Playlist • Spotify',
+              img: imgSrc
+            });
+            changed = true;
+          } else if (imgSrc && !existing.img) {
+            existing.img = imgSrc;
+            changed = true;
+          }
+        }
+      });
+      if (changed) saveDiscoveredItems();
+    }
+
+    loadSavedItems();
+    setInterval(scanPageForMedia, 3000);
+
+    let activeFilter = 'all';
+    let searchQuery = '';
+
+    function getHubElement() {
+      return document.getElementById('sab-library-hub');
+    }
+
+    function renderHubContent() {
+      let hub = getHubElement();
+      if (!hub) return;
+
+      const filtered = cachedItems.filter(item => {
+        if (activeFilter === 'playlist' && item.type !== 'playlist') return false;
+        if (activeFilter === 'podcast' && item.type !== 'podcast') return false;
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          return item.title.toLowerCase().includes(q) || (item.sub && item.sub.toLowerCase().includes(q));
+        }
+        return true;
+      });
+
+      const showLikedSongs = activeFilter === 'all' || activeFilter === 'liked' || activeFilter === 'playlist';
+
+      let itemsHtml = '';
+      if (showLikedSongs && (!searchQuery || 'liked songs'.includes(searchQuery.toLowerCase()))) {
+        itemsHtml += `
+          <div id="sab-liked-songs-entry" class="sab-lib-item" style="border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 14px; margin-bottom: 6px;">
+            <div class="sab-lib-thumb" style="background: linear-gradient(135deg, #450af5, #8e8ee5);">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="#ffffff">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+              </svg>
+            </div>
+            <div class="sab-lib-meta">
+              <div class="sab-lib-name" style="font-size: 16px;">Liked Songs</div>
+              <div class="sab-lib-sub" style="color: #1ed760; font-weight: 500;">Playlist • 67 songs</div>
+            </div>
+            <div style="color: #1ed760; font-size: 18px; padding-right: 6px;">📌</div>
+          </div>
+        `;
+      }
+
+      filtered.forEach((item, idx) => {
+        const thumbContent = item.img
+          ? `<img src="${item.img}" loading="lazy" />`
+          : `<div style="font-size: 24px; opacity: 0.7;">${item.type === 'podcast' ? '🎙️' : '🎵'}</div>`;
+
+        itemsHtml += `
+          <div class="sab-lib-item sab-media-entry" data-index="${idx}" data-url="${item.url}">
+            <div class="sab-lib-thumb">${thumbContent}</div>
+            <div class="sab-lib-meta">
+              <div class="sab-lib-name">${item.title}</div>
+              <div class="sab-lib-sub">${item.sub || (item.type === 'podcast' ? 'Podcast • Show' : 'Playlist')}</div>
+            </div>
+          </div>
+        `;
+      });
+
+      if (!itemsHtml) {
+        itemsHtml = `<div style="text-align: center; color: #888; padding: 40px 10px; font-size: 14px;">No items match "${searchQuery}"</div>`;
+      }
+
+      hub.innerHTML = `
+        <div class="sab-lib-header">
+          <h1 class="sab-lib-title">Your Library</h1>
+          <button id="sab-lib-settings-btn" style="background: rgba(255,255,255,0.08); border:none; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer;" aria-label="Controller Settings">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="#ffffff">
+              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="sab-lib-search-box">
+          <input type="text" id="sab-lib-search-input" class="sab-lib-search-input" placeholder="Search your playlists, podcasts & songs..." value="${searchQuery}" />
+        </div>
+
+        <div class="sab-lib-chips">
+          <button class="sab-chip ${activeFilter === 'all' ? 'active' : ''}" data-filter="all">All</button>
+          <button class="sab-chip ${activeFilter === 'playlist' ? 'active' : ''}" data-filter="playlist">Playlists</button>
+          <button class="sab-chip ${activeFilter === 'podcast' ? 'active' : ''}" data-filter="podcast">Podcasts</button>
+          <button class="sab-chip ${activeFilter === 'liked' ? 'active' : ''}" data-filter="liked">Liked Songs</button>
+        </div>
+
+        <div id="sab-lib-items-container">
+          ${itemsHtml}
+        </div>
+      `;
+
+      // Attach event listeners
+      const searchInput = hub.querySelector('#sab-lib-search-input');
+      if (searchInput) {
+        searchInput.oninput = (e) => {
+          searchQuery = e.target.value;
+          renderHubContent();
+          const freshInput = hub.querySelector('#sab-lib-search-input');
+          if (freshInput) {
+            freshInput.focus();
+            freshInput.setSelectionRange(searchQuery.length, searchQuery.length);
+          }
+        };
+      }
+
+      hub.querySelectorAll('.sab-chip').forEach((btn) => {
+        btn.onclick = () => {
+          activeFilter = btn.getAttribute('data-filter') || 'all';
+          renderHubContent();
+        };
+      });
+
+      const settingsBtn = hub.querySelector('#sab-lib-settings-btn');
+      if (settingsBtn) {
+        settingsBtn.onclick = () => {
+          if (window.AndroidBridge && typeof window.AndroidBridge.openSettings === 'function') {
+            window.AndroidBridge.openSettings();
+          }
+        };
+      }
+
+      const likedSongsEntry = hub.querySelector('#sab-liked-songs-entry');
+      if (likedSongsEntry) {
+        likedSongsEntry.onclick = () => {
+          closeLibraryHub();
+          history.pushState(null, '', '/collection/tracks');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        };
+      }
+
+      hub.querySelectorAll('.sab-media-entry').forEach((entry) => {
+        entry.onclick = () => {
+          const targetUrl = entry.getAttribute('data-url');
+          if (targetUrl) {
+            closeLibraryHub();
+            history.pushState(null, '', targetUrl);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          }
+        };
+      });
+    }
+
+    function openLibraryHub() {
+      let hub = getHubElement();
+      if (!hub) {
+        hub = document.createElement('div');
+        hub.id = 'sab-library-hub';
+        document.body.appendChild(hub);
+      }
+      hub.style.display = 'block';
+      isHubOpen = true;
+      window.__sab_is_library_open = true;
+
+      // Update bottom nav highlighting
+      updateNavHighlight(true);
+      renderHubContent();
+    }
+
+    function closeLibraryHub() {
+      const hub = getHubElement();
+      if (hub) hub.style.display = 'none';
+      isHubOpen = false;
+      window.__sab_is_library_open = false;
+      updateNavHighlight(false);
+    }
+
+    function updateNavHighlight(isLibActive) {
+      const navLinks = document.querySelectorAll('nav a, [data-testid="bottom-bar"] a, [role="navigation"] a');
+      navLinks.forEach((a) => {
+        const text = (a.innerText || '').toLowerCase();
+        if (text.includes('library')) {
+          if (isLibActive) a.classList.add('active');
+          else a.classList.remove('active');
+        } else if (isLibActive) {
+          a.classList.remove('active');
+        }
+      });
+    }
+
+    // Capture clicks on "Your Library" bottom navigation tab
+    document.addEventListener(
+      'click',
+      (e) => {
+        const clickable = e.target.closest('a, button');
+        if (!clickable) return;
+        const text = (clickable.innerText || '').trim();
+        const aria = (clickable.getAttribute('aria-label') || '').trim();
+
+        if (text.includes('Your Library') || aria.includes('Your Library')) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (isHubOpen) {
+            renderHubContent();
+          } else {
+            openLibraryHub();
+          }
+        } else if (
+          text.includes('Home') ||
+          text.includes('Search') ||
+          clickable.getAttribute('href') === '/' ||
+          clickable.getAttribute('href') === '/search'
+        ) {
+          closeLibraryHub();
+        }
+      },
+      true
+    );
+
+    // Global APIs for Android & settings dialog
+    window.sabOpenLibrary = openLibraryHub;
+    window.__sab_close_library = () => {
+      if (isHubOpen) {
+        closeLibraryHub();
+        return true;
+      }
+      return false;
+    };
   })();
 
   const SELECTORS = {

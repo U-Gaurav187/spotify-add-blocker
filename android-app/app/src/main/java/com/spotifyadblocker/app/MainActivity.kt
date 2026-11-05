@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
@@ -43,6 +45,41 @@ class MainActivity : AppCompatActivity() {
     private lateinit var fabControllerMenu: FloatingActionButton
     private lateinit var otaSyncManager: OtaSyncManager
 
+    private val fabHandler = Handler(Looper.getMainLooper())
+    private val hideFabRunnable = Runnable {
+        if (::fabControllerMenu.isInitialized) {
+            fabControllerMenu.animate()
+                .alpha(0f)
+                .setDuration(400)
+                .withEndAction {
+                    fabControllerMenu.visibility = View.GONE
+                }
+                .start()
+        }
+    }
+
+    fun showFabTemporarily() {
+        fabHandler.removeCallbacks(hideFabRunnable)
+        if (::fabControllerMenu.isInitialized) {
+            if (fabControllerMenu.visibility != View.VISIBLE) {
+                fabControllerMenu.visibility = View.VISIBLE
+                fabControllerMenu.alpha = 0f
+            }
+            fabControllerMenu.animate()
+                .alpha(1f)
+                .setDuration(250)
+                .start()
+            fabHandler.postDelayed(hideFabRunnable, 3500)
+        }
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        if (ev?.action == MotionEvent.ACTION_DOWN) {
+            showFabTemporarily()
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     private var documentStartScriptHandler: ScriptHandler? = null
     private val blockedUrlPatterns = CopyOnWriteArrayList<String>()
 
@@ -61,6 +98,14 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun showKeyboard() {
             activity.forceShowKeyboard()
+        }
+
+        @JavascriptInterface
+        fun openSettings() {
+            activity.runOnUiThread {
+                activity.showFabTemporarily()
+                activity.showControllerDialog()
+            }
         }
     }
 
@@ -126,18 +171,26 @@ class MainActivity : AppCompatActivity() {
         // Handle system back gestures
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webView.canGoBack()) {
-                    webView.goBack()
-                } else {
-                    finish()
+                webView.evaluateJavascript("window.__sab_close_library ? window.__sab_close_library() : false") { result ->
+                    if (result != "true") {
+                        if (webView.canGoBack()) {
+                            webView.goBack()
+                        } else {
+                            finish()
+                        }
+                    }
                 }
             }
         })
 
         // Floating Action Button to open Controller Menu & OTA Sync
         fabControllerMenu.setOnClickListener {
+            showFabTemporarily()
             showControllerDialog()
         }
+
+        // Show FAB briefly on startup, auto-hides after 3.5s
+        showFabTemporarily()
 
         // Load Spotify Web Player
         webView.loadUrl("https://open.spotify.com")
@@ -531,7 +584,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnLibrary.setOnClickListener {
-            webView.loadUrl("https://open.spotify.com/collection/playlists")
+            webView.evaluateJavascript("window.sabOpenLibrary ? window.sabOpenLibrary() : (location.href = 'https://open.spotify.com/collection/tracks')") { }
             dialog.dismiss()
         }
 
