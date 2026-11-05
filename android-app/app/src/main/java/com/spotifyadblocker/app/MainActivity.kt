@@ -24,6 +24,11 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import android.view.ViewGroup
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
+import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
@@ -134,6 +139,15 @@ class MainActivity : AppCompatActivity() {
         pageProgressBar = findViewById(R.id.pageProgressBar)
         fabControllerMenu = findViewById(R.id.fabControllerMenu)
 
+        // Squeeze WebView so bottom menus and navigation bars sit cleanly above Android navigation buttons
+        ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
+            val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            view.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                bottomMargin = navBars.bottom
+            }
+            insets
+        }
+
         webView.addJavascriptInterface(AndroidBridge(this), "AndroidBridge")
 
         // Ensure touch focus for soft keyboard (fixes Xiaomi / MIUI / HyperOS IME issue)
@@ -171,7 +185,7 @@ class MainActivity : AppCompatActivity() {
         // Handle system back gestures
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                webView.evaluateJavascript("window.__sab_close_library ? window.__sab_close_library() : false") { result ->
+                webView.evaluateJavascript("window.__sab_handle_back ? window.__sab_handle_back() : (window.__sab_close_library ? window.__sab_close_library() : false)") { result ->
                     if (result != "true") {
                         if (webView.canGoBack()) {
                             webView.goBack()

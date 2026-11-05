@@ -434,7 +434,7 @@
   })();
 
   const SELECTORS = {
-    trackRow: '[data-testid="tracklist-row"]',
+    trackRow: '[data-testid="tracklist-row"], [data-testid="track-row"], div[role="row"], div[class*="legacy-list-row"]',
     trackLink: 'a[data-testid="internal-track-link"], a[href*="/track/"]',
     trackTitleInRow: '[data-testid="tracklist-row"] div[dir="auto"], [data-testid="internal-track-link"]',
     artistLink: 'a[href*="/artist/"]',
@@ -450,7 +450,7 @@
     playButton: '[data-testid="play-button"], button[aria-label*="Play" i]',
     mainPlayButton: '[data-testid="action-bar-row"] [data-testid="play-button"], main [data-testid="play-button"], [data-testid="play-button"]',
 
-    moreButton: '[data-testid="more-button"], button[aria-haspopup="menu"]',
+    moreButton: '[data-testid="more-button"], button[aria-label*="More" i], button[aria-haspopup="menu"]',
     menuItem: '[role="menuitem"], button[role="menuitem"]',
 
     nowPlayingWidget: '[data-testid="now-playing-widget"]',
@@ -1461,6 +1461,183 @@
       toast.classList.remove('visible');
     }, 2200);
   }
+
+  // ============================================================================
+  // MULTI-POINT CONTEXT MENU DISMISSAL & MOBILE QUEUE ENGINE
+  // ============================================================================
+  (function installContextMenuAndBackHandler() {
+    // 1. Android hardware & gesture Back button handler
+    window.__sab_handle_back = () => {
+      // Priority 1: Check if a context menu is open
+      const contextMenu = document.querySelector('[data-testid="context-menu"]');
+      if (contextMenu) {
+        const closeBtn = Array.from(contextMenu.querySelectorAll('button')).find(
+          (b) => (b.innerText || '').trim().toLowerCase() === 'close'
+        ) || contextMenu.querySelector('#sab-menu-top-close') || contextMenu.querySelector('button:last-child');
+        if (closeBtn) {
+          closeBtn.click();
+        } else {
+          contextMenu.remove();
+        }
+        return true;
+      }
+
+      // Priority 2: Check if Library Hub is open
+      if (window.__sab_close_library && window.__sab_close_library()) {
+        return true;
+      }
+
+      // Priority 3: Check if any generic modal/dialog is open
+      const dialog = document.querySelector(
+        '[role="dialog"]:not([hidden]), .GenericModal, [data-testid="upsell-modal"], [data-testid="in-app-modal"]'
+      );
+      if (dialog) {
+        const closeBtn = dialog.querySelector(
+          'button[aria-label*="Close" i], button[data-testid="close-button"], [aria-label*="Dismiss" i]'
+        );
+        if (closeBtn) {
+          closeBtn.click();
+          return true;
+        }
+      }
+
+      return false; // Let Android WebView handle normal history back
+    };
+
+    // 2. Enhance mobile context menu
+    function enhanceContextMenu(menu) {
+      if (!menu || menu.dataset.sabEnhanced === 'true') return;
+      menu.dataset.sabEnhanced = 'true';
+
+      // A. Extract track metadata directly from header
+      const header = menu.querySelector('div.baTEMlBxcCZlga7dGC9y > div:first-child');
+      const imgEl = menu.querySelector('img[data-testid="entity-image"], img');
+      const textSpans = header ? header.querySelectorAll('span') : [];
+
+      const trackTitle = imgEl?.getAttribute('alt') || (textSpans[0] ? textSpans[0].innerText.trim() : (pendingContextTrack?.title || 'Unknown Track'));
+      const trackArtist = (textSpans[1] ? textSpans[1].innerText.trim() : (pendingContextTrack?.artist || ''));
+      const trackImg = imgEl?.src || pendingContextTrack?.img || '';
+
+      const trackObj = {
+        title: trackTitle,
+        artist: trackArtist,
+        img: trackImg,
+        url: pendingContextTrack?.url || null
+      };
+
+      // B. Inject top-right circular (✕) close button
+      if (header && !header.querySelector('#sab-menu-top-close')) {
+        header.style.position = 'relative';
+        const topClose = document.createElement('button');
+        topClose.id = 'sab-menu-top-close';
+        topClose.setAttribute('aria-label', 'Close menu');
+        topClose.innerHTML = `
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#ffffff">
+            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+          </svg>
+        `;
+        topClose.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const nativeClose = Array.from(menu.querySelectorAll('button')).find(
+            (b) => (b.innerText || '').trim().toLowerCase() === 'close'
+          );
+          if (nativeClose) nativeClose.click();
+          else menu.remove();
+        };
+        header.appendChild(topClose);
+      }
+
+      // C. Tap backdrop (outside card content) to dismiss
+      menu.addEventListener('click', (e) => {
+        const cardContent = menu.querySelector('div.baTEMlBxcCZlga7dGC9y');
+        if (cardContent && !cardContent.contains(e.target) && e.target !== menu.querySelector('button:last-child')) {
+          e.preventDefault();
+          e.stopPropagation();
+          const nativeClose = Array.from(menu.querySelectorAll('button')).find(
+            (b) => (b.innerText || '').trim().toLowerCase() === 'close'
+          );
+          if (nativeClose) nativeClose.click();
+          else menu.remove();
+        }
+      }, true);
+
+      // D. Inject "Add to queue" and "Play next" into the action list
+      const actionList = menu.querySelector('div.BzXORrH5fC_WFoaFMV00, div.jYY3vIqjla0acLN5LA2A, [role="menu"]') ||
+                         (header ? header.nextElementSibling : null);
+
+      if (actionList && !menu.querySelector('.sab-injected-queue-btn')) {
+        const queueFragment = document.createElement('div');
+        queueFragment.className = 'sab-injected-queue-btn';
+        queueFragment.innerHTML = `
+          <button id="sab-menu-add-queue" type="button" class="sab-action-row">
+            <span class="sab-action-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="#1ed760">
+                <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v6l5-3-5-3z"/>
+              </svg>
+            </span>
+            <span class="sab-action-text">Add to queue</span>
+          </button>
+          <button id="sab-menu-play-next" type="button" class="sab-action-row">
+            <span class="sab-action-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="#ffffff">
+                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+              </svg>
+            </span>
+            <span class="sab-action-text">Play next</span>
+          </button>
+        `;
+
+        const addQueueBtn = queueFragment.querySelector('#sab-menu-add-queue');
+        addQueueBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          addTrackToCustomQueue(trackObj, false);
+          showStatusToast(`Added to queue: ${trackObj.title}`);
+          const nativeClose = Array.from(menu.querySelectorAll('button')).find(
+            (b) => (b.innerText || '').trim().toLowerCase() === 'close'
+          );
+          if (nativeClose) nativeClose.click();
+          else menu.remove();
+        };
+
+        const playNextBtn = queueFragment.querySelector('#sab-menu-play-next');
+        playNextBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          addTrackToCustomQueue(trackObj, true);
+          showStatusToast(`Will play next: ${trackObj.title}`);
+          const nativeClose = Array.from(menu.querySelectorAll('button')).find(
+            (b) => (b.innerText || '').trim().toLowerCase() === 'close'
+          );
+          if (nativeClose) nativeClose.click();
+          else menu.remove();
+        };
+
+        if (actionList.firstChild) {
+          actionList.insertBefore(queueFragment, actionList.firstChild);
+        } else {
+          actionList.appendChild(queueFragment);
+        }
+      }
+    }
+
+    // Observe when context menu mounts
+    const menuObserver = new MutationObserver(() => {
+      const menu = document.querySelector('[data-testid="context-menu"]');
+      if (menu) {
+        enhanceContextMenu(menu);
+      }
+    });
+
+    if (document.documentElement) {
+      menuObserver.observe(document.documentElement, { childList: true, subtree: true });
+    } else {
+      window.addEventListener('DOMContentLoaded', () => {
+        menuObserver.observe(document.documentElement, { childList: true, subtree: true });
+      });
+    }
+  })();
 
   function forceSkipForward() {
     const media = getActiveMediaElement();
