@@ -169,14 +169,13 @@ class MainActivity : AppCompatActivity() {
         settings.databaseEnabled = true
         settings.mediaPlaybackRequiresUserGesture = false
 
-        // ALWAYS identify as Desktop Chrome so Spotify enables full audio streaming and never blocks playback with "Continue in the Spotify app"
-        settings.userAgentString = DESKTOP_USER_AGENT
-
         if (desktopView) {
+            settings.userAgentString = DESKTOP_USER_AGENT
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
         } else {
-            // Adaptive mobile view: fits phone screen naturally without horizontal dragging
+            // Native mobile view: pure native mobile Spotify experience (bottom nav, mobile search, native keyboard)
+            settings.userAgentString = null
             settings.useWideViewPort = false
             settings.loadWithOverviewMode = false
         }
