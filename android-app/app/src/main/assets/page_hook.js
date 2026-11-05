@@ -215,7 +215,8 @@
     }
 
     loadSavedItems();
-    setInterval(scanPageForMedia, 3000);
+    scanPageForMedia();
+    window.addEventListener('popstate', () => setTimeout(scanPageForMedia, 800));
 
     let activeFilter = 'all';
     let searchQuery = '';
@@ -749,21 +750,6 @@
       }
     } catch (_) {}
   }
-  // Run very frequently to catch modals as soon as they appear
-  setInterval(dismissAppUpsellModals, 500);
-  // Also run on every DOM mutation via a lightweight observer
-  try {
-    const upsellObserver = new MutationObserver(() => {
-      dismissAppUpsellModals();
-    });
-    if (document.body) {
-      upsellObserver.observe(document.body, { childList: true, subtree: true });
-    } else {
-      document.addEventListener('DOMContentLoaded', () => {
-        upsellObserver.observe(document.body, { childList: true, subtree: true });
-      }, { once: true });
-    }
-  } catch (_) {}
 
   // ============================================================================
   // 1. STRIP PLAYBACK & QUEUE RESTRICTIONS FROM SPOTIFY STATE PAYLOADS
@@ -1018,7 +1004,12 @@
   }
 
   function getNativeQueueRowsInfo() {
-    const candidates = document.querySelectorAll('h1, h2, h3, h4, span, div, p');
+    // Fast path: Immediately exit if no queue container exists in the DOM
+    const queuePanel =
+      document.querySelector('aside[aria-label*="queue" i], [data-testid="queue-panel"], [data-testid="queue"], [id*="queue" i]');
+    if (!queuePanel) return null;
+
+    const candidates = queuePanel.querySelectorAll('h1, h2, h3, h4, span, div, p');
     let nextHeading = null;
 
     for (const el of candidates) {
@@ -1037,10 +1028,6 @@
     if (!nextHeading) return null;
 
     const headingRect = nextHeading.getBoundingClientRect();
-    let queuePanel =
-      nextHeading.closest('aside') ||
-      nextHeading.closest('[id*="Panel" i]') ||
-      nextHeading.closest('[data-testid*="panel" i]');
 
     if (!queuePanel) {
       let anc = nextHeading.parentElement;

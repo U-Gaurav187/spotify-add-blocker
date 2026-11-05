@@ -130,8 +130,6 @@ html.sab-unlock-controls [data-testid="progress-bar"] {
 div[role="dialog"][aria-label*="Spotify app" i],
 div[class*="c6ePp96H72tqD2qynW9h"],
 div[class*="Fv9Fzlrq7_Q2Nn3zfn42"],
-div:has(> button:has-text("Get App")),
-div:has(> div > button:has-text("Get App")),
 .GenericModal:has(a[href*="spotify.link"]),
 .GenericModal:has(a[href*="app.adjust.com"]),
 div[class*="mobileAppBanner"],
