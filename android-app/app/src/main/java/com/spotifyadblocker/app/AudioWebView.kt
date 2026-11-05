@@ -2,14 +2,13 @@ package com.spotifyadblocker.app
 
 import android.content.Context
 import android.util.AttributeSet
-import android.view.MotionEvent
 import android.view.View
 import android.webkit.WebView
 
 /**
- * Custom WebView that ensures soft-keyboard input focus is properly accepted
- * across all Android OEM implementations (including Xiaomi / MIUI / HyperOS) and keeps
- * web media playback uninterrupted during background and screen-off states.
+ * Custom WebView that ensures web media playback remains uninterrupted during
+ * background and screen-off states without interfering with Chromium's native touch
+ * and IME (soft keyboard) dispatch.
  */
 class AudioWebView @JvmOverloads constructor(
     context: Context,
@@ -20,21 +19,6 @@ class AudioWebView @JvmOverloads constructor(
     init {
         isFocusable = true
         isFocusableInTouchMode = true
-    }
-
-    override fun onCheckIsTextEditor(): Boolean {
-        return true
-    }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        when (event.action) {
-            MotionEvent.ACTION_DOWN -> {
-                if (!hasFocus()) {
-                    requestFocus()
-                }
-            }
-        }
-        return super.onTouchEvent(event)
     }
 
     override fun onWindowVisibilityChanged(visibility: Int) {

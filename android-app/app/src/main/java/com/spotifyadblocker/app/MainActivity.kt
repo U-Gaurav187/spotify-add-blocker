@@ -66,10 +66,8 @@ class MainActivity : AppCompatActivity() {
 
     fun forceShowKeyboard() {
         runOnUiThread {
-            webView.requestFocus()
-            webView.requestFocusFromTouch()
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(webView, InputMethodManager.SHOW_IMPLICIT)
+            imm.showSoftInput(webView, 0)
         }
     }
 
@@ -105,17 +103,6 @@ class MainActivity : AppCompatActivity() {
             cookieManager.setAcceptThirdPartyCookies(webView, true)
         } catch (e: Exception) {
             e.printStackTrace()
-        }
-
-        webView.setOnTouchListener { v, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP -> {
-                    if (!v.hasFocus()) {
-                        v.requestFocusFromTouch()
-                    }
-                }
-            }
-            false
         }
 
         // Start background media foreground service to prevent audio suspension
